@@ -26,8 +26,8 @@ var (
 // cleanRel turns a client-supplied relative path ("Photos/a.jpg") into a safe local path, or "".
 func cleanRel(p string) string {
 	p = path.Clean(strings.ReplaceAll(p, "\\", "/"))
-	if p == "." || !fs.ValidPath(p) {
-		return ""
+	if p == "." || !fs.ValidPath(p) || strings.ContainsFunc(p, func(r rune) bool { return r == ':' || r < 32 }) {
+		return "" // colons (drive letters, Windows streams) and control characters are never valid names
 	}
 	if osp := filepath.FromSlash(p); filepath.IsLocal(osp) { // also rejects C:, CON, NUL...
 		return osp

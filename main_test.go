@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -47,9 +49,13 @@ func TestExtractCode(t *testing.T) {
 		"Rs 5000 debited. OTP for txn: 7731. Do not share.": "7731",
 		"482913 is your verification code":                  "482913",
 		"G-123456 is your Google verification code":         "123456",
-		"482913":                         "", // already just the code
-		"See you at 1830 near the gate":  "", // not an OTP message
-		"Your code expires soon, no num": "",
+		"482913":                                  "", // already just the code
+		"See you at 1830 near the gate":           "", // not an OTP message
+		"Your code expires soon, no num":          "",
+		"Wi-Fi password for guests: Namaste@2026": "", // a password, not an OTP
+		"PIN code: abc1234":                       "",
+		"Your PIN is 9921":                        "9921",
+		"Rs 5000 debited. OTP for txn: 7731.":     "7731",
 	} {
 		if got := extractCode(in); got != want {
 			t.Errorf("extractCode(%q) = %q, want %q", in, got, want)
@@ -90,8 +96,12 @@ func TestPathau(t *testing.T) {
 			t.Fatalf("dedup: got %q want %q", got.Name, want)
 		}
 	}
-	for _, bad := range []string{"../evil.txt", "C:/evil.txt", "/etc/x", "sub/../../x", "NUL"} {
-		if r := do(t, "PUT", srv.URL+"/api/upload?name="+bad, "", strings.NewReader("x"), nil); r.StatusCode != 400 {
+	bads := []string{"../evil.txt", "C:/evil.txt", "/etc/x", "sub/../../x", "a:stream.txt", "tab\tname"}
+	if runtime.GOOS == "windows" {
+		bads = append(bads, "NUL") // a device name only on Windows
+	}
+	for _, bad := range bads {
+		if r := do(t, "PUT", srv.URL+"/api/upload?name="+url.QueryEscape(bad), "", strings.NewReader("x"), nil); r.StatusCode != 400 {
 			t.Fatalf("path %q: got %d", bad, r.StatusCode)
 		}
 	}

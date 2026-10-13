@@ -223,8 +223,9 @@ func (a *App) deviceList() []*Device {
 // ---- OTPs ----
 
 var (
-	otpWord = regexp.MustCompile(`(?i)\b(otp|code|pin|verification|verify|passcode|password|one[- ]time|कोड)`)
-	otpNum  = regexp.MustCompile(`\b\d{4,8}\b`)
+	otpWord = regexp.MustCompile(`(?i)\b(otp|code|pin|verification|verify|passcode|one[- ]time)\b|कोड`)
+	// a 4-8 digit number standing on its own: "is 482913.", "G-123456", but not "Namaste@2026" or "abc1234"
+	otpNum = regexp.MustCompile(`(?:^|[\s:#-])(\d{4,8})(?:$|[\s.,;:!)])`)
 )
 
 // extractCode pulls the one-time code out of an SMS like "Your OTP is 482913, valid for 5 min".
@@ -232,11 +233,18 @@ var (
 func extractCode(t string) string {
 	t = strings.TrimSpace(t)
 	loc := otpWord.FindStringIndex(t)
-	if loc == nil || otpNum.FindString(t) == t {
+	if loc == nil || otpNum.MatchString(t) && firstCode(t) == t {
 		return ""
 	}
-	if c := otpNum.FindString(t[loc[1]:]); c != "" { // prefer the number after "OTP", not an amount before it
+	if c := firstCode(t[loc[1]:]); c != "" { // prefer the number after "OTP", not an amount before it
 		return c
 	}
-	return otpNum.FindString(t)
+	return firstCode(t)
+}
+
+func firstCode(t string) string {
+	if m := otpNum.FindStringSubmatch(t); m != nil {
+		return m[1]
+	}
+	return ""
 }
