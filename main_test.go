@@ -63,6 +63,44 @@ func TestExtractCode(t *testing.T) {
 	}
 }
 
+func TestPauseCancel(t *testing.T) {
+	a, srv := testApp(t)
+	pr, pw := io.Pipe()
+	status := make(chan int, 1)
+	go func() {
+		req, _ := http.NewRequest("PUT", srv.URL+"/api/outbox?name=big.bin&xid=test-xfer-1", pr)
+		req.Header.Set("X-Pathau", "1")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			status <- 0
+			return
+		}
+		resp.Body.Close()
+		status <- resp.StatusCode
+	}()
+	pw.Write(make([]byte, 1<<20)) // returns once the server is reading
+	ctl := func(action string) {
+		do(t, "POST", srv.URL+"/api/xfer", "", strings.NewReader(`{"id":"test-xfer-1","action":"`+action+`"}`), nil)
+	}
+	ctl("pause")
+	wrote := make(chan bool, 1)
+	go func() { pw.Write(make([]byte, 64<<20)); wrote <- true }() // more than any socket buffer
+	select {
+	case <-wrote:
+		t.Fatal("paused transfer kept reading")
+	case <-time.After(500 * time.Millisecond):
+	}
+	ctl("cancel")
+	pw.CloseWithError(io.ErrUnexpectedEOF)
+	if s := <-status; s != http.StatusConflict && s != 0 {
+		t.Fatalf("cancel: got %d", s)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if ents, _ := os.ReadDir(a.outDir); len(ents) != 0 {
+		t.Fatalf("canceled file was kept: %v", ents)
+	}
+}
+
 func TestPathau(t *testing.T) {
 	a, srv := testApp(t)
 	lan := "192.168.1.5:8765"

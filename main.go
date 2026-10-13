@@ -77,6 +77,7 @@ type App struct {
 	subs    map[*sub]bool
 	peers   map[string]*Peer
 	offers  map[string]*Offer
+	xfers   map[string]*xfer // running transfers that can be paused/canceled
 }
 
 func main() {
@@ -105,7 +106,7 @@ func main() {
 
 func newApp(port int) *App {
 	a := &App{port: port, id: randHex(8), fails: map[string]*fail{},
-		subs: map[*sub]bool{}, peers: map[string]*Peer{}, offers: map[string]*Offer{}}
+		subs: map[*sub]bool{}, peers: map[string]*Peer{}, offers: map[string]*Offer{}, xfers: map[string]*xfer{}}
 	dir := os.Getenv("PATHAU_HOME")
 	if dir == "" {
 		d, _ := os.UserConfigDir()
@@ -166,6 +167,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /api/texts", user(a.getTexts))
 	mux.HandleFunc("POST /api/text", user(a.postText))
 	mux.HandleFunc("PUT /api/upload", user(a.upload))
+	mux.HandleFunc("POST /api/xfer", user(a.control))
 	mux.HandleFunc("GET /api/shares", user(a.listShares))
 	mux.HandleFunc("GET /api/ls", user(a.ls))
 	mux.HandleFunc("GET /api/dl", user(a.dl))

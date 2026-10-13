@@ -85,34 +85,54 @@ const onPage = (p) => !$(`.page[data-page="${p}"]`).hidden;
 function bump(id) { const b = $(id); b.textContent = (+b.textContent || 0) + 1; b.hidden = false; }
 
 // ---------- transfers ----------
+const rows = {}; // transfer id -> row, so pause/cancel from the other side shows here too
 function row(label, total, icon = 'upload') {
   $('#no-xfers').hidden = true;
   const fill = h('i'), info = h('span', { class: 'info' }), acts = h('span', { class: 'acts' });
   const el = h('li', { class: 'xfer' }, ic(icon), h('span', { class: 'name', title: label, textContent: label }), acts, h('div', { class: 'bar' }, fill), info);
   const list = $('#xfers'); list.prepend(el);
   while (list.children.length > 50) list.lastChild.remove();
-  const t0 = Date.now();
-  return {
+  let t0 = Date.now(), base = 0, last = 0;
+  const r = {
+    id: Math.random().toString(36).slice(2, 10), xid: '', paused: false, canceled: false, xhr: null,
     update(done, tot = total, note = '') {
-      const speed = done / Math.max((Date.now() - t0) / 1000, 0.001);
+      last = done;
       fill.style.width = tot > 0 ? `${(done * 100) / tot}%` : '30%';
+      if (r.paused || r.canceled) return;
+      const speed = (done - base) / Math.max((Date.now() - t0) / 1000, 0.001);
       info.textContent = (tot > 0 ? `${Math.floor((done * 100) / tot)}% · ${fmt(done)} of ${fmt(tot)}` : fmt(done)) + ` · ${fmt(speed)}/s` + (note ? ` · ${note}` : '');
     },
     status(msg) { info.textContent = msg; },
-    done(msg) { el.classList.add('ok'); fill.style.width = '100%'; info.textContent = msg; el.firstChild.replaceWith(ic('check')); },
-    fail(msg) { el.classList.add('bad'); info.textContent = msg; el.firstChild.replaceWith(ic('alert')); },
+    done(msg) { acts.replaceChildren(); delete rows[r.xid]; el.classList.add('ok'); fill.style.width = '100%'; info.textContent = msg; el.firstChild.replaceWith(ic('check')); },
+    fail(msg) { acts.replaceChildren(); delete rows[r.xid]; el.classList.remove('paused'); el.classList.add('bad'); info.textContent = msg; el.firstChild.replaceWith(ic('alert')); },
     action(label, icon, fn) { acts.append(iconBtn(label, icon, fn)); },
+    track(xid) { delete rows[r.xid]; r.xid = xid; rows[xid] = r; },
+    // mark shows a pause/resume/cancel made here or on the other device
+    mark(action) {
+      if (action === 'cancel') { r.canceled = true; info.textContent = 'Canceling…'; acts.replaceChildren(); r.xhr?.abort(); return; }
+      r.paused = action === 'pause';
+      el.classList.toggle('paused', r.paused);
+      pauseBtn.replaceChildren(ic(r.paused ? 'play' : 'pause'));
+      pauseBtn.setAttribute('aria-label', r.paused ? 'Resume' : 'Pause'); pauseBtn.title = r.paused ? 'Resume' : 'Pause';
+      if (r.paused) info.textContent = `Paused · ${total > 0 ? Math.floor((last * 100) / total) + '%' : fmt(last)}`;
+      else { t0 = Date.now(); base = last; info.textContent = 'Resuming…'; }
+    },
   };
+  const send = (action) => r.xid && api('/api/xfer', { id: r.xid, action }).then(() => r.mark(action), (e) => toast(e.message));
+  const pauseBtn = iconBtn('Pause', 'pause', () => send(r.paused ? 'resume' : 'pause'));
+  r.controls = () => acts.replaceChildren(pauseBtn, iconBtn('Cancel', 'x', () => send('cancel'), 'danger'));
+  return r;
 }
 
 // XHR, not fetch: fetch can't report upload progress.
-function put(url, file, onProgress) {
+function put(url, file, onProgress, r) {
   return new Promise((res, rej) => {
     const x = new XMLHttpRequest();
+    if (r) r.xhr = x;
     x.open('PUT', url); x.setRequestHeader('X-Pathau', '1');
     x.upload.onprogress = (e) => onProgress(e.loaded);
     x.onload = () => (x.status < 300 ? res(x.responseText) : rej(new Error(x.responseText.trim() || x.status)));
-    x.onerror = () => rej(new Error('Connection lost'));
+    x.onerror = x.onabort = () => rej(new Error('Connection lost'));
     x.send(file);
   });
 }
@@ -120,21 +140,28 @@ function put(url, file, onProgress) {
 const total = (items) => items.reduce((s, i) => s + i.file.size, 0);
 const what = (items) => (items.length === 1 ? items[0].path : `${items.length} files`);
 
+// uploadItems sends files one by one; urlFor(item, xid) gives each file's URL.
 async function uploadItems(items, urlFor, label) {
   if (!items.length) return;
   const tot = total(items), r = row(label, tot);
+  r.controls();
   let sent = 0, failed = 0;
-  for (const it of items) {
-    try { await put(urlFor(it), it.file, (d) => r.update(sent + d, tot, items.length > 1 ? it.path : '')); }
-    catch (e) { failed++; toast(`${it.path}: ${e.message}`); }
+  for (const [i, it] of items.entries()) {
+    if (r.canceled) break;
+    r.track(`${r.id}-${i}`);
+    try { await put(urlFor(it, r.xid, r.paused), it.file, (d) => r.update(sent + d, tot, items.length > 1 ? it.path : ''), r); }
+    catch (e) { if (!r.canceled) { failed++; toast(`${it.path}: ${e.message}`); } }
     sent += it.file.size;
   }
-  failed ? r.fail(`${failed} of ${items.length} failed`) : r.done(`Sent · ${fmt(sent)}`);
+  if (r.canceled) r.fail('Canceled');
+  else failed ? r.fail(`${failed} of ${items.length} failed`) : r.done(`Sent · ${fmt(sent)}`);
 }
+// paused=1 starts the next file of a paused batch already paused
+const xq = (xid, paused) => `&xid=${xid}${paused ? '&paused=1' : ''}`;
 // phone -> this PC
-const sendToPC = (items) => uploadItems(items, (it) => `/api/upload?name=${enc(it.path)}`, `${what(items)} → ${me.name}`);
+const sendToPC = (items) => uploadItems(items, (it, xid, p) => `/api/upload?name=${enc(it.path)}${xq(xid, p)}`, `${what(items)} → ${me.name}`);
 // this PC -> phones (outbox)
-const sendToPhones = (items) => uploadItems(items, (it) => `/api/outbox?name=${enc(it.path)}`, `${what(items)} → phones`)
+const sendToPhones = (items) => uploadItems(items, (it, xid, p) => `/api/outbox?name=${enc(it.path)}${xq(xid, p)}`, `${what(items)} → phones`)
   .then(() => items.length && toast('Ready on your phones: open Pathau there and tap Files'));
 
 // this PC -> another PC. The other side must Accept first; each file is SHA-256 checked there.
@@ -146,26 +173,32 @@ async function sendToPeer(p, items) {
   try {
     ({ token } = await api('/api/send/offer', { peer: p.addr, files: items.map((i) => ({ path: i.path, size: i.file.size })) }));
   } catch (e) { return r.fail(e.message === 'declined' ? `${p.name} declined` : e.message); }
+  r.controls();
   let sent = 0, failed = 0;
-  for (const it of items) {
+  for (const [i, it] of items.entries()) {
     let err;
-    for (let attempt = 0; attempt < 3; attempt++) { // damaged copies are deleted on the other side, so just resend
+    for (let attempt = 0; attempt < 3 && !r.canceled; attempt++) { // damaged copies are deleted on the other side, so just resend
+      r.track(`${r.id}-${i}-${attempt}`);
+      const q = { peer: p.addr, token, path: it.path, xid: r.xid };
+      if (r.paused) q.paused = '1';
       try {
-        await put('/api/send/file?' + new URLSearchParams({ peer: p.addr, token, path: it.path }), it.file,
-          (d) => r.update(sent + d, tot, items.length > 1 ? it.path : ''));
+        await put('/api/send/file?' + new URLSearchParams(q), it.file, (d) => r.update(sent + d, tot, items.length > 1 ? it.path : ''), r);
         err = null; break;
-      } catch (e) { err = e; }
+      } catch (e) { err = e; if (/Canceled/.test(e.message)) r.canceled = true; }
     }
+    if (r.canceled) break;
     if (err) { failed++; toast(`${it.path}: ${err.message}`); }
     sent += it.file.size;
   }
-  failed ? r.fail(`${failed} of ${items.length} failed`) : r.done(`Sent · ${fmt(sent)} · verified`);
+  if (r.canceled) r.fail('Canceled');
+  else failed ? r.fail(`${failed} of ${items.length} failed`) : r.done(`Sent · ${fmt(sent)} · verified`);
 }
 
 // Incoming progress, pushed by this PC's server
 const rx = {};
 function onRx(m) {
-  const r = (rx[m.id] ||= row(`${m.name} ← ${m.from}`, m.total, 'download'));
+  let r = rx[m.id];
+  if (!r) { r = rx[m.id] = row(`${m.name} ← ${m.from}`, m.total, 'download'); r.track(m.id); r.controls(); }
   if (!m.state) return r.update(m.done, m.total);
   delete rx[m.id];
   if (m.state !== 'done') return r.fail(m.state);
@@ -176,6 +209,8 @@ function onRx(m) {
   if (files.src === 'recv') loadFiles();
   if (!onPage('files')) bump('#files-badge');
 }
+// a transfer was paused/resumed/canceled (possibly from the phone that's sending)
+const onXfer = (m) => rows[m.id]?.mark(m.action);
 
 function pick(dir) {
   return new Promise((res) => {
@@ -614,6 +649,7 @@ $('#login-form').onsubmit = async (e) => {
   const es = new EventSource('/api/events');
   es.addEventListener('text', (e) => addText(JSON.parse(e.data), true));
   es.addEventListener('rx', (e) => onRx(JSON.parse(e.data)));
+  es.addEventListener('xfer', (e) => onXfer(JSON.parse(e.data)));
   es.addEventListener('outbox', (e) => {
     if (files.src === 'out') loadFiles();
     if (me.admin) return;

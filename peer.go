@@ -227,7 +227,9 @@ func (a *App) peerFile(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	dir := a.cfg.SaveDir
 	a.mu.Unlock()
-	name, err := a.saveStream(dir, p, r.Body, size, o.From, func() string { return r.Trailer.Get("X-Sha256") })
+	x := a.newXfer("", "")
+	defer a.endXfer(x)
+	name, err := a.saveStream(dir, p, r.Body, size, o.From, x, func() string { return r.Trailer.Get("X-Sha256") })
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -282,7 +284,9 @@ func (a *App) sendFile(w http.ResponseWriter, r *http.Request) {
 	}
 	out.ContentLength = -1 // chunked, so the trailer can follow the body
 	out.Trailer = http.Header{"X-Sha256": nil}
-	out.Body = io.NopCloser(&sumReader{r: io.TeeReader(r.Body, h), done: func() {
+	x := a.reqXfer(r, "") // lets this PC pause/cancel what it's sending
+	defer a.endXfer(x)
+	out.Body = io.NopCloser(&sumReader{r: io.TeeReader(gate{x, r.Body}, h), done: func() {
 		out.Trailer.Set("X-Sha256", hex.EncodeToString(h.Sum(nil)))
 	}})
 	relay(w, out)

@@ -59,7 +59,8 @@ func (a *App) sourceDir(s string, local bool) string {
 // wantSum, if set, is called after the body is fully read and must return the expected SHA-256 hex.
 // On any failure the partial file is deleted, so a broken copy is never kept.
 // from != "" reports live progress to this PC's UI.
-func (a *App) saveStream(dir, rel string, body io.Reader, total int64, from string, wantSum func() string) (string, error) {
+// x (optional) lets the transfer be paused or canceled while it runs.
+func (a *App) saveStream(dir, rel string, body io.Reader, total int64, from string, x *xfer, wantSum func() string) (string, error) {
 	rel = cleanRel(rel)
 	if rel == "" {
 		return "", errBadPath
@@ -81,7 +82,10 @@ func (a *App) saveStream(dir, rel string, body io.Reader, total int64, from stri
 	if err != nil {
 		return "", err
 	}
-	pw := &progress{a: a, id: randHex(4), name: filepath.ToSlash(name), from: from, total: total}
+	pw := &progress{a: a, x: x, id: randHex(4), name: filepath.ToSlash(name), from: from, total: total}
+	if x != nil {
+		pw.id = x.id
+	}
 	h := sha256.New()
 	_, err = io.CopyBuffer(io.MultiWriter(f, h, pw), body, make([]byte, 1<<20))
 	if cerr := f.Close(); err == nil {
@@ -119,12 +123,16 @@ func createUnique(root *os.Root, p string) (*os.File, string, error) {
 // progress reports receive progress to this PC's UI, at most ~3 times a second.
 type progress struct {
 	a              *App
+	x              *xfer
 	id, name, from string
 	total, done    int64
 	last           time.Time
 }
 
 func (p *progress) Write(b []byte) (int, error) {
+	if err := p.x.wait(); err != nil { // paused: stop reading, so the sender stalls too
+		return 0, err
+	}
 	p.done += int64(len(b))
 	if time.Since(p.last) > 300*time.Millisecond {
 		p.last = time.Now()
@@ -149,6 +157,8 @@ func httpErr(w http.ResponseWriter, err error) {
 		code = 400
 	case errChecksum:
 		code = 422
+	case errCanceled:
+		code = http.StatusConflict
 	}
 	http.Error(w, err.Error(), code)
 }
@@ -158,7 +168,13 @@ func (a *App) upload(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	dir := a.cfg.SaveDir
 	a.mu.Unlock()
-	name, err := a.saveStream(dir, r.URL.Query().Get("name"), r.Body, r.ContentLength, a.who(r), nil)
+	owner := ""
+	if d := a.device(r); d != nil {
+		owner = d.ID
+	}
+	x := a.reqXfer(r, owner)
+	defer a.endXfer(x)
+	name, err := a.saveStream(dir, r.URL.Query().Get("name"), r.Body, r.ContentLength, a.who(r), x, nil)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -172,7 +188,9 @@ func (a *App) upload(w http.ResponseWriter, r *http.Request) {
 // so files are copied into the outbox; phones get notified and download from there.
 // ponytail: copies the file (fast over loopback); a native file picker could share by path instead.
 func (a *App) outboxAdd(w http.ResponseWriter, r *http.Request) {
-	name, err := a.saveStream(a.outDir, r.URL.Query().Get("name"), r.Body, r.ContentLength, "", nil)
+	x := a.reqXfer(r, "")
+	defer a.endXfer(x)
+	name, err := a.saveStream(a.outDir, r.URL.Query().Get("name"), r.Body, r.ContentLength, "", x, nil)
 	if err != nil {
 		httpErr(w, err)
 		return

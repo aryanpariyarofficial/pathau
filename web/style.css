@@ -151,7 +151,7 @@ body:not(.admin) .admin-only, body.admin .phone-only { display: none !important;
 
 /* transfers */
 .xfers { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
-.xfer { display: grid; grid-template-columns: auto 1fr auto; gap: 4px var(--s3); align-items: center; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.xfer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px var(--s3); align-items: center; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .xfer > .ic { grid-column: 1; grid-row: 1 / span 3; color: var(--primary); }
 .xfer .name { grid-column: 2; grid-row: 1; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .xfer .acts { grid-column: 3; grid-row: 1 / span 3; display: flex; gap: var(--s1); }
@@ -161,6 +161,8 @@ body:not(.admin) .admin-only, body.admin .phone-only { display: none !important;
 .xfer.ok > .ic { color: var(--ok); }
 .xfer.ok .bar i { background: var(--ok); }
 .xfer.bad > .ic, .xfer.bad .info { color: var(--danger); }
+.xfer.paused .bar i { background: var(--folder); }
+.xfer.paused > .ic { color: var(--folder); }
 .xfer.bad .bar i { background: var(--danger); }
 
 /* offers */
