@@ -12,6 +12,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Pathau">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>
+// Theme before first paint, so dark mode never flashes white: saved choice, else the system setting.
+(function () {
+  var t = 'system';
+  try { t = localStorage.getItem('pathau-theme') || 'system'; } catch (e) {}
+  var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+})();
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -48,6 +57,9 @@
   <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04"/></symbol>
   <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="m6 3 14 9-14 9V3z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
   <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
 </svg>
@@ -85,6 +97,7 @@
       <span class="dot" aria-hidden="true"></span>
       <div><b class="pc-name"></b><small id="me-status">Online</small></div>
     </div>
+    <button type="button" class="theme-btn" id="theme-btn"></button>
   </nav>
 
   <main id="content" tabindex="-1">
@@ -279,6 +292,17 @@
         <h2>Security</h2>
         <label class="field"><span>Passcode</span><input name="passcode" autocomplete="off" placeholder="New random passcode each start">
           <small>Leave empty for a new random passcode every time Pathau starts. The QR code includes it, so phones never type it.</small></label>
+
+        <h2>Appearance</h2>
+        <div class="field">
+          <span id="theme-l">Theme</span>
+          <div class="choice" role="radiogroup" aria-labelledby="theme-l">
+            <label><input type="radio" name="theme" value="system"><svg class="ic sm"><use href="#i-monitor"/></svg>System</label>
+            <label><input type="radio" name="theme" value="light"><svg class="ic sm"><use href="#i-sun"/></svg>Light</label>
+            <label><input type="radio" name="theme" value="dark"><svg class="ic sm"><use href="#i-moon"/></svg>Dark</label>
+          </div>
+          <small>System follows your Windows setting. Each device remembers its own choice.</small>
+        </div>
 
         <h2>Clipboard</h2>
         <label class="check"><input type="checkbox" name="autoCopy"><span>Copy text from phones to this PC's clipboard automatically</span></label>

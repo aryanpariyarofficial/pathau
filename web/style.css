@@ -11,14 +11,13 @@
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b1120; --surface: #111827; --surface-2: #1e293b; --hover: #1a2436;
-    --text: #f1f5f9; --text-2: #94a3b8; --line: #263244;
-    --primary: #3b82f6; --primary-hover: #60a5fa; --primary-soft: #172554;
-    --folder: #f59e0b; --ok: #4ade80; --ok-soft: #052e16; --danger: #f87171; --danger-soft: #3f1d1d;
-    color-scheme: dark;
-  }
+/* data-theme is set before first paint (index.html) from the saved choice or the system setting */
+:root[data-theme="dark"] {
+  --bg: #0b1120; --surface: #111827; --surface-2: #1e293b; --hover: #1a2436;
+  --text: #f1f5f9; --text-2: #94a3b8; --line: #263244;
+  --primary: #3b82f6; --primary-hover: #60a5fa; --primary-soft: #172554;
+  --folder: #f59e0b; --ok: #4ade80; --ok-soft: #052e16; --danger: #f87171; --danger-soft: #3f1d1d;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -280,7 +279,19 @@ dialog#viewer::backdrop { background: rgb(2 6 23 / .7); }
 .install b { display: block; font-size: 16px; }
 .install .sub { margin-top: 2px; }
 .offline { display: flex; gap: var(--s3); align-items: center; max-width: 1080px; margin: 0 auto var(--s4); padding: var(--s3) var(--s4); border-radius: var(--radius); background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; font-size: 14px; }
-@media (prefers-color-scheme: dark) { .offline { background: #422006; color: #fde68a; border-color: #92400e; } }
+:root[data-theme="dark"] .offline { background: #422006; color: #fde68a; border-color: #92400e; }
+
+/* theme: a button in the sidebar (top-right corner on phones) and a choice in Settings */
+.theme-btn {
+  display: flex; align-items: center; gap: var(--s3); min-height: 44px; padding: 0 var(--s3); margin-top: var(--s2);
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-2); font-weight: 550; text-align: left;
+}
+.theme-btn:hover { background: var(--hover); color: var(--text); }
+.choice { justify-self: start; display: inline-flex; gap: 4px; padding: 4px; margin-bottom: var(--s2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
+.choice label { display: inline-flex; align-items: center; gap: var(--s2); min-height: 40px; padding: 0 var(--s4); border-radius: 6px; color: var(--text-2); font-weight: 550; cursor: pointer; }
+.choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.choice label:has(input:checked) { background: var(--surface); color: var(--primary); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
+.choice label:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 /* toast */
 #toast {
@@ -299,6 +310,8 @@ dialog#viewer::backdrop { background: rgb(2 6 23 / .7); }
     padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); border-right: 0; border-top: 1px solid var(--line);
   }
   .brand, .nav-foot { display: none; }
+  .theme-btn { position: fixed; top: 10px; right: 10px; z-index: 60; margin: 0; width: 44px; justify-content: center; padding: 0; background: var(--surface); border: 1px solid var(--line); flex: none; }
+  .theme-btn .theme-label { display: none; }
   .nav a { flex: 1; flex-direction: column; gap: 2px; justify-content: center; min-height: 56px; padding: 4px; font-size: 12px; }
   .nav a[aria-current="page"] { background: none; }
   .badge { position: absolute; top: 4px; left: calc(50% + 6px); margin: 0; }

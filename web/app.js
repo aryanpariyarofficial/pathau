@@ -65,6 +65,31 @@ async function copy(text) {
   toast('Copied');
 }
 
+// ---------- theme: system / light / dark ----------
+const THEMES = { system: ['monitor', 'System theme'], light: ['sun', 'Light theme'], dark: ['moon', 'Dark theme'] };
+const darkMQ = matchMedia('(prefers-color-scheme: dark)');
+let themePref = 'system';
+try { themePref = localStorage.getItem('pathau-theme') || 'system'; } catch { /* private mode */ }
+function applyTheme() {
+  const dark = themePref === 'dark' || (themePref === 'system' && darkMQ.matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  $('meta[name=theme-color]').content = dark ? '#111827' : '#2563eb';
+  const [icon, label] = THEMES[themePref] || THEMES.system;
+  $('#theme-btn').replaceChildren(ic(icon), h('span', { class: 'theme-label', textContent: label }));
+  $('#theme-btn').setAttribute('aria-label', `${label}. Click to change`);
+  $('#theme-btn').title = `${label}. Click to change`;
+  for (const r of $$('input[name=theme]')) r.checked = r.value === themePref;
+}
+function setTheme(t) {
+  themePref = t;
+  try { localStorage.setItem('pathau-theme', t); } catch { /* private mode */ }
+  applyTheme();
+}
+darkMQ.addEventListener('change', applyTheme); // "System" follows Windows/phone changes live
+$('#theme-btn').onclick = () => { const k = Object.keys(THEMES); setTheme(k[(k.indexOf(themePref) + 1) % k.length]); };
+for (const r of $$('input[name=theme]')) r.onchange = () => setTheme(r.value);
+applyTheme();
+
 // ---------- navigation ----------
 const PAGES = ['home', 'files', 'text', 'devices', 'settings'];
 function go() {

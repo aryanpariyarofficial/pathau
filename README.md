@@ -71,7 +71,7 @@ No cable, no cloud, no account, no internet data. Free and open source.
 - Big files stream straight to disk with live progress and speed. **Pause, resume or cancel** any transfer from either device. Existing files are never overwritten.
 - **Windows notifications** for received files and texts. When a phone asks to pair or a PC wants to send files, Pathau opens itself.
 - One ~12 MB `.exe`. No installer, no admin rights, no internet.
-- Light and dark mode, on PC and phone.
+- Light and dark mode on PC and phone: follow the system, or pick one (sidebar button or Settings → Appearance).
 
 ## Screenshots
 | | |
