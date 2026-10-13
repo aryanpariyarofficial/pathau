@@ -41,6 +41,22 @@ func do(t *testing.T, method, url, host string, body io.Reader, hdr map[string]s
 	return resp
 }
 
+func TestExtractCode(t *testing.T) {
+	for in, want := range map[string]string{
+		"Your OTP is 482913. Valid for 5 minutes.":          "482913",
+		"Rs 5000 debited. OTP for txn: 7731. Do not share.": "7731",
+		"482913 is your verification code":                  "482913",
+		"G-123456 is your Google verification code":         "123456",
+		"482913":                         "", // already just the code
+		"See you at 1830 near the gate":  "", // not an OTP message
+		"Your code expires soon, no num": "",
+	} {
+		if got := extractCode(in); got != want {
+			t.Errorf("extractCode(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestPathau(t *testing.T) {
 	a, srv := testApp(t)
 	lan := "192.168.1.5:8765"
@@ -87,6 +103,50 @@ func TestPathau(t *testing.T) {
 	do(t, "PUT", srv.URL+"/api/outbox?name=hi.txt", "", strings.NewReader("x"), nil)
 	if b, _ := io.ReadAll(do(t, "GET", srv.URL+"/api/ls?s=out", "", nil, nil).Body); !strings.Contains(string(b), "hi.txt") {
 		t.Fatalf("outbox list: %s", b)
+	}
+
+	// pairing: right passcode -> pending (no access) until Allowed here; persists; removable
+	code := a.pass
+	r0 := do(t, "POST", srv.URL+"/api/login", lan, strings.NewReader(`{"code":"`+code+`"}`), nil)
+	if r0.StatusCode != 202 || a.pass == code {
+		t.Fatalf("pair: got %d, passcode rotated: %v", r0.StatusCode, a.pass != code)
+	}
+	cookie := map[string]string{"Cookie": "pathau=" + r0.Cookies()[0].Value}
+	if r := do(t, "GET", srv.URL+"/api/shares", lan, nil, cookie); r.StatusCode != 401 {
+		t.Fatalf("pending device got in: %d", r.StatusCode)
+	}
+	var devID string
+	for _, d := range a.devices {
+		devID = d.ID
+	}
+	do(t, "POST", srv.URL+"/api/devices/answer", "", strings.NewReader(`{"id":"`+devID+`","allow":true}`), nil)
+	if r := do(t, "GET", srv.URL+"/api/shares", lan, nil, cookie); r.StatusCode != 200 {
+		t.Fatalf("allowed device refused: %d", r.StatusCode)
+	}
+	if b, _ := os.ReadFile(a.devPath); strings.Contains(string(b), r0.Cookies()[0].Value) || !strings.Contains(string(b), devID) {
+		t.Fatalf("devices.json must hold the device but not its raw key: %s", b)
+	}
+	do(t, "POST", srv.URL+"/api/devices/remove", "", strings.NewReader(`{"id":"`+devID+`"}`), nil)
+	if r := do(t, "GET", srv.URL+"/api/shares", lan, nil, cookie); r.StatusCode != 401 {
+		t.Fatalf("removed device still in: %d", r.StatusCode)
+	}
+
+	// iPhone Shortcut key: Bearer works without the X-Pathau header, and only for this key
+	var sk struct{ Key string }
+	json.NewDecoder(do(t, "POST", srv.URL+"/api/devices/shortcut", "", strings.NewReader(`{}`), nil).Body).Decode(&sk)
+	post := func(key string) int {
+		req, _ := http.NewRequest("POST", srv.URL+"/api/text", strings.NewReader(`{"text":"Your OTP is 4829, valid 5 min"}`))
+		req.Host = lan
+		req.Header.Set("Authorization", "Bearer "+key)
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if post(sk.Key) != 200 || post(sk.Key+"x") != 401 {
+		t.Fatal("shortcut key auth")
+	}
+	if got := a.texts[len(a.texts)-1]; got.Code != "4829" || got.From != "iPhone Shortcut" {
+		t.Fatalf("shortcut text: %+v", got)
 	}
 
 	// ten wrong passcodes pause the device, even for the right one

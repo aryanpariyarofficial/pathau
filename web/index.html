@@ -58,6 +58,12 @@
     </label>
     <button class="btn primary block">Connect</button>
   </form>
+  <div id="waiting" class="card login-card" hidden>
+    <img src="icon-192.png" alt="" width="64" height="64">
+    <h1>Almost there</h1>
+    <p class="sub">On <b class="pc-name">your PC</b>, click <b>Allow</b> to connect this phone. You only do this once.</p>
+    <div class="spinner" aria-label="Waiting for approval"></div>
+  </div>
 </div>
 
 <div id="app" class="shell" hidden>
@@ -94,7 +100,7 @@
             <ol class="steps">
               <li>Open the camera on your phone</li>
               <li>Point it at this code</li>
-              <li>Tap the link. No app needed</li>
+              <li>Tap the link, then click <b>Allow</b> here</li>
             </ol>
           </div>
           <dl class="kv">
@@ -205,10 +211,15 @@
     <section class="page" data-page="devices" aria-labelledby="devices-h" hidden>
       <header class="page-head"><h1 id="devices-h">Devices</h1></header>
       <article class="card">
-        <h2>Phones &amp; browsers</h2>
-        <p class="sub">These devices entered your passcode. Disconnect any you don't recognize.</p>
-        <ul class="rows" id="sessions"></ul>
-        <p class="empty" id="no-sessions">No phones connected. Scan the QR code on Home to connect one.</p>
+        <h2>Paired phones</h2>
+        <p class="sub">Paired once, they stay connected, even after this PC restarts. Remove any you don't recognize.</p>
+        <ul class="rows" id="devices"></ul>
+        <p class="empty" id="no-devices">No phones paired yet. Scan the QR code on Home to pair one.</p>
+      </article>
+      <article class="card">
+        <h2>iPhone: send OTPs automatically</h2>
+        <p class="sub">An iPhone Shortcut can forward OTP messages to this PC's clipboard, so you just press Ctrl+V. No app needed.</p>
+        <div id="shortcut-setup"><button type="button" class="btn" id="make-key"><svg class="ic"><use href="#i-plus"/></svg>Set up iPhone Shortcut</button></div>
       </article>
       <article class="card">
         <h2>Computers</h2>
@@ -228,6 +239,8 @@
         <h2>This PC</h2>
         <label class="field"><span>PC name</span><input name="name" required>
           <small>Shown on phones and other computers.</small></label>
+
+        <label class="check" id="autostart-row" hidden><input type="checkbox" id="autostart"><span>Start Pathau when Windows starts, so phones can always reach this PC</span></label>
 
         <h2>Received files</h2>
         <div class="field"><span id="save-l">Save files to</span>
@@ -253,7 +266,7 @@
         <p class="sub">Stops Pathau on this PC. Phones and computers will disconnect.</p>
         <button type="button" class="btn danger" id="quit"><svg class="ic"><use href="#i-power"/></svg>Quit Pathau</button>
       </article>
-      <p class="foot">Pathau is free and open source. Your files never leave your network.</p>
+      <p class="foot">Pathau <span id="version"></span> · free and open source · <a href="https://github.com/aryanpariyarofficial/pathau" target="_blank" rel="noopener">GitHub</a><br>Your files never leave your network.</p>
     </section>
   </main>
 </div>

@@ -404,7 +404,8 @@ function addText(m, live) {
   const li = h('li', { class: live && !mine ? 'new' : '' },
     h('div', { class: 'grow' },
       h('div', { class: 'meta', textContent: `${m.from} · ${when(m.time)}` }),
-      h('div', { class: `body${/^\s*[\w-]{3,12}\s*$/.test(m.text) && /\d/.test(m.text) ? ' code' : ''}`, textContent: m.text })),
+      h('div', { class: `body${/^\s*[\w-]{3,12}\s*$/.test(m.text) && /\d/.test(m.text) ? ' code' : ''}`, textContent: m.text }),
+      m.code && h('div', { class: 'code-chip', title: 'Code found in this message' }, m.code, iconBtn('Copy code', 'copy', () => copy(m.code)))),
     iconBtn('Copy', 'copy', () => copy(m.text)));
   $('#texts').prepend(li);
   if (live && !mine) {
@@ -469,23 +470,44 @@ async function refresh() {
     sel.replaceChildren(h('option', { value: '', textContent: 'To phones' }), ...s.peers.map((p) => h('option', { value: p.addr, textContent: `To ${p.name}` })));
     sel.value = cur;
   }
-  if (changed('offers', s.offers)) {
-    $('#offers').replaceChildren(...s.offers.map((o) => {
-      const answer = (accept) => api('/api/offer/answer', { id: o.id, accept }).then(refresh);
-      return h('div', { class: 'card offer', role: 'alert' }, ic('download', 'lg'),
-        h('div', { class: 'grow' }, h('b', { textContent: `${o.from} wants to send you ${o.count === 1 ? 'a file' : `${o.count} files`}` }), h('span', { class: 'sub', textContent: `${fmt(o.total)} · saved to ${s.saveDir}` })),
-        btn('Decline', null, () => answer(false)), btn('Accept', 'check', () => answer(true), 'primary'));
-    }));
-    document.title = s.offers.length ? '(1) Incoming files · Pathau' : 'Pathau';
+  const pending = s.devices.filter((d) => d.pending), paired = s.devices.filter((d) => !d.pending);
+  if (changed('banners', [s.offers, pending])) {
+    $('#offers').replaceChildren(
+      ...pending.map((d) => {
+        const answer = (allow) => api('/api/devices/answer', { id: d.id, allow }).then(refresh);
+        return h('div', { class: 'card offer', role: 'alert' }, ic(device(d.ua)[1], 'lg'),
+          h('div', { class: 'grow' }, h('b', { textContent: `Allow ${device(d.ua)[0]} (${d.ip}) to connect?` }),
+            h('span', { class: 'sub', textContent: 'It will stay paired until you remove it. Only allow your own devices.' })),
+          btn('Deny', null, () => answer(false)), btn('Allow', 'check', () => answer(true), 'primary'));
+      }),
+      ...s.offers.map((o) => {
+        const answer = (accept) => api('/api/offer/answer', { id: o.id, accept }).then(refresh);
+        return h('div', { class: 'card offer', role: 'alert' }, ic('download', 'lg'),
+          h('div', { class: 'grow' }, h('b', { textContent: `${o.from} wants to send you ${o.count === 1 ? 'a file' : `${o.count} files`}` }), h('span', { class: 'sub', textContent: `${fmt(o.total)} · saved to ${s.saveDir}` })),
+          btn('Decline', null, () => answer(false)), btn('Accept', 'check', () => answer(true), 'primary'));
+      }));
+    const n = s.offers.length + pending.length;
+    document.title = n ? `(${n}) Pathau` : 'Pathau';
   }
-  if (changed('sessions', s.sessions)) {
-    $('#no-sessions').hidden = s.sessions.length > 0;
-    $('#sessions').replaceChildren(...s.sessions.map((d) => {
-      const [label, icon] = device(d.ua);
-      return h('li', {}, ic(icon), h('div', { class: 'grow' }, h('b', { textContent: label }), h('small', { class: 'sub', textContent: ` · ${d.ip} · active ${when(d.seen)}` })),
-        btn('Disconnect', null, () => api('/api/kick', { id: d.id }).then(refresh), 'sm danger'));
+  if (changed('devices', paired)) {
+    $('#no-devices').hidden = paired.length > 0;
+    $('#devices').replaceChildren(...paired.map((d) => {
+      const [label, icon] = d.kind === 'shortcut' ? ['iPhone Shortcut', 'phone'] : device(d.ua);
+      return h('li', {}, ic(icon), h('div', { class: 'grow' }, h('b', { textContent: d.name }),
+        h('small', { class: 'sub', textContent: ` · ${label}${d.ip ? ` · ${d.ip}` : ''} · last seen ${d.seen.startsWith('0001') ? 'never' : when(d.seen)}` })),
+      btn('Rename', null, () => {
+        const name = prompt('Name this device', d.name);
+        if (name) api('/api/devices/rename', { id: d.id, name }).then(refresh, (e) => toast(e.message));
+      }, 'sm'),
+      btn('Remove', null, () => confirm(`Remove ${d.name}? It will need to pair again.`) && api('/api/devices/remove', { id: d.id }).then(refresh), 'sm danger'));
     }));
   }
+  if (changed('autostart', [s.canAutostart, s.autostart])) {
+    $('#autostart-row').hidden = !s.canAutostart;
+    $('#autostart').checked = s.autostart;
+  }
+  me.url = $('#url').textContent;
+  $('#version').textContent = s.version === 'dev' ? '(dev build)' : `v${s.version}`;
   if (changed('shares', s.shares)) loadSources();
   if (changed('saveDir', s.saveDir)) { me.saveDir = s.saveDir; if (files.src === 'recv') loadFiles(); }
   if (!last.settings) {
@@ -531,6 +553,24 @@ $('#open-save').onclick = () => openFile('recv', '');
 $('#quit').onclick = () => confirm('Quit Pathau? Phones and computers will disconnect.') &&
   api('/api/quit', {}).then(() => document.body.replaceChildren(h('main', { class: 'login' }, h('p', { textContent: 'Pathau has stopped. You can close this tab.' }))));
 
+$('#autostart').onchange = (e) => api('/api/autostart', { on: e.target.checked })
+  .then(() => toast(e.target.checked ? 'Pathau will start with Windows' : "Pathau won't start with Windows"), (err) => toast(err.message));
+
+$('#make-key').onclick = async () => {
+  const { key } = await api('/api/devices/shortcut', {});
+  const code = (t) => h('code', { textContent: t });
+  $('#shortcut-setup').replaceChildren(
+    h('p', { class: 'sub', textContent: 'Your Shortcut key. It is shown only this once: copy it now.' }),
+    h('div', { class: 'keybox' }, h('span', { class: 'grow', textContent: key }), iconBtn('Copy key', 'copy', () => copy(key))),
+    h('ol', { class: 'steps-box' },
+      h('li', {}, 'On the iPhone open ', h('b', { textContent: 'Shortcuts' }), ' → ', h('b', { textContent: 'Automation' }), ' → ', h('b', { textContent: '+' }), ' → ', h('b', { textContent: 'Message' }), '. Set ', h('b', { textContent: 'Message Contains' }), ' to ', code('OTP'), ' and choose ', h('b', { textContent: 'Run Immediately' }), '.'),
+      h('li', {}, 'Add the action ', h('b', { textContent: 'Get Contents of URL' }), ' with URL ', code(`${me.url}/api/text`), ', Method ', code('POST'), '.'),
+      h('li', {}, 'Under Headers add ', code('Authorization'), ' = ', code(`Bearer ${key}`), '.'),
+      h('li', {}, 'Under Request Body choose ', h('b', { textContent: 'JSON' }), ', add the key ', code('text'), ' and set its value to ', h('b', { textContent: 'Shortcut Input' }), '.'),
+      h('li', {}, "Done. Test it by texting yourself 'OTP 1234': the code lands on this PC's clipboard.")),
+    h('p', { class: 'hint', textContent: 'Tip: for any copied text, make a Shortcut with "Get Clipboard" then the same "Get Contents of URL" (value: Clipboard), and run it with Back Tap: Settings → Accessibility → Touch → Back Tap. To revoke, remove "iPhone Shortcut" from Paired phones.' }));
+};
+
 // ---------- phone ----------
 $('#phone-files').onchange = (e) => { sendToPC([...e.target.files].map((f) => ({ file: f, path: f.name }))); e.target.value = ''; };
 dropZone($('#phone-drop'), sendToPC);
@@ -554,7 +594,14 @@ $('#login-form').onsubmit = async (e) => {
 (async () => {
   me = await api('/api/me');
   for (const el of $$('.pc-name')) el.textContent = me.name;
-  if (!me.authed) { $('#login').hidden = false; return; }
+  if (!me.authed) {
+    $('#login').hidden = false;
+    if (me.pending) { // paired with the passcode, now waiting for Allow on the PC
+      $('#login-form').hidden = true; $('#waiting').hidden = false;
+      setInterval(async () => { if ((await api('/api/me').catch(() => ({}))).authed) location.reload(); }, 1500);
+    }
+    return;
+  }
   document.body.classList.toggle('admin', me.admin);
   $('#app').hidden = false;
   if (/iPhone|iPad/.test(navigator.userAgent)) $('.ios-only').hidden = false;

@@ -15,14 +15,19 @@ No cable, no cloud, no account, no internet data. Free and open source.
 - **Every PC-to-PC file is SHA-256 verified.** A damaged copy is deleted and resent automatically.
 - **Text & clipboard**: send links, OTPs and codes. Text from your phone lands in the PC clipboard, ready for Ctrl+V.
 - **Shared folders** (read-only, passcode protected): phones browse and download, single files or whole folders as .zip. Downloads can resume.
-- **Safe by default**: random passcode each start (or set your own), 10 wrong tries pauses that device, see and disconnect any device, existing files are never overwritten.
+- **Pair once**: a phone pairs with the QR code, and you click **Allow** on the PC. It stays paired, even after restarts, until you remove it.
+- **iPhone OTPs to the PC clipboard automatically**: an iPhone Shortcut forwards OTP messages, and Pathau copies just the code. Set it up under Devices.
+- **Always ready**: starts with Windows and lives in the system tray.
+- **Safe by default**: see [SECURITY.md](SECURITY.md). New devices need your Allow, passcodes work once, 10 wrong tries pauses a device, and existing files are never overwritten.
 - Big files (many GB) stream straight to disk with live progress and speed.
 - A ~8 MB single `.exe`. No installer and no admin rights needed.
 
 ## Use it
-1. Download `pathau.exe` from [Releases](../../releases) and run it. It opens in your browser.
+1. Download `pathau-…-windows-amd64.exe` from [Releases](../../releases) and run it. No install and no admin rights; it opens in your browser and adds a tray icon.
 2. When Windows Firewall asks, click **Allow** (private networks).
-3. Phone: scan the QR code. Other PC: run Pathau there too.
+3. Phone: scan the QR code, then click **Allow** on the PC. Other PC: run Pathau there too.
+
+**"Windows protected your PC"?** Windows SmartScreen shows this for new apps that aren't code-signed yet. Click **More info → Run anyway**. Every release is built from this source code by [GitHub Actions](.github/workflows/release.yml) and published with SHA-256 checksums. See [SECURITY.md](SECURITY.md#verifying-a-download) to verify your download.
 
 Received files go to `Downloads\Pathau` (change it in Settings).
 
@@ -32,23 +37,25 @@ Received files go to `Downloads\Pathau` (change it in Settings).
 Requires [Go](https://go.dev/dl/) 1.25+.
 ```sh
 go test ./...
-go build -ldflags "-s -w -H windowsgui" -o pathau.exe .   # -H windowsgui hides the console window
+go build -trimpath -ldflags "-s -w -H windowsgui" -o pathau.exe .   # -H windowsgui: tray app, no console window
 ```
 macOS / Linux: `GOOS=darwin go build` / `GOOS=linux go build`.
 
 ## How it works
-Each PC runs a small HTTP server on port **8765**, and the UI is a web page served by it. Phones log in with the passcode carried in the QR code, which gives them a session cookie. PCs find each other with a UDP broadcast on port **8766**. A PC-to-PC transfer is an offer, then Accept, then a one-time token. Each file streams with its SHA-256 sent as an HTTP trailer, and the receiver deletes the file if the checksum doesn't match.
+Each PC runs a small HTTP server on port **8765**, and the UI is a web page served by it. A phone pairs using the one-time passcode in the QR code plus your **Allow**. It then gets a permanent device key, stored as a cookie on the phone and as a hash in `devices.json` on the PC. PCs find each other with a UDP broadcast on port **8766**. A PC-to-PC transfer is an offer, then Accept, then a one-time token. Each file streams with its SHA-256 sent as an HTTP trailer, and the receiver deletes the file if the checksum doesn't match.
 
 | File | What |
 |---|---|
 | `main.go` | server, auth, settings, live events, text |
-| `files.go` | file sources (received, sent to phones, shared folders), uploads, downloads, Windows folder dialog and Explorer |
+| `files.go` | file sources (received, sent to phones, shared folders), uploads, downloads |
 | `peer.go` | discovery and PC-to-PC transfers |
+| `devices.go` | pairing (approval, permanent devices, Shortcut keys) and OTP detection |
+| `shell_windows.go` | tray, start with Windows, folder dialog, Explorer (Win32/COM, no scripts) |
 | `web/` | the UI (embedded into the exe): one page for this PC and for phones |
 | `rsrc_windows_*.syso` | the app icon for the .exe (made with `go-winres`) |
 
 ## Support
-Free forever. Questions or ideas? Open an issue.
+Free forever. Questions or ideas? Open an issue. To make a release: `git tag v1.0.0 && git push origin v1.0.0`.
 
 ## License
 MIT

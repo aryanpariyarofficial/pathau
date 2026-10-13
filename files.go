@@ -11,10 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -160,7 +158,7 @@ func (a *App) upload(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	dir := a.cfg.SaveDir
 	a.mu.Unlock()
-	name, err := a.saveStream(dir, r.URL.Query().Get("name"), r.Body, r.ContentLength, deviceLabel(r.UserAgent()), nil)
+	name, err := a.saveStream(dir, r.URL.Query().Get("name"), r.Body, r.ContentLength, a.who(r), nil)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -435,90 +433,3 @@ func (a *App) pickSaveDir(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 	writeJSON(w, map[string]string{"path": dir})
 }
-
-// ---- Windows shell helpers ----
-
-func powershell(script string, env ...string) *exec.Cmd {
-	cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", script)
-	cmd.Env = append(os.Environ(), env...)
-	hideWindow(cmd)
-	return cmd
-}
-
-// pickFolder shows the modern Windows "Select Folder" dialog, on top of the browser.
-// ponytail: compiled by PowerShell on each use (~1s); move to Win32 syscalls if that's ever too slow.
-func pickFolder(title, okLabel string) (string, error) {
-	if runtime.GOOS != "windows" {
-		return "", errors.New("type the folder path instead")
-	}
-	out, err := powershell(folderPickerPS, "PATHAU_TITLE="+title, "PATHAU_OK="+okLabel).Output()
-	return strings.TrimSpace(string(out)), err
-}
-
-// showInExplorer navigates an already-open Explorer window to dir (selecting file, if given)
-// instead of opening a new window every time. Falls back to a new window.
-func showInExplorer(dir, file string) {
-	if runtime.GOOS != "windows" {
-		open(dir)
-		return
-	}
-	powershell(explorerPS, "PATHAU_DIR="+dir, "PATHAU_FILE="+file).Start()
-}
-
-const explorerPS = `
-$dir = $env:PATHAU_DIR; $file = $env:PATHAU_FILE
-$w = @((New-Object -ComObject Shell.Application).Windows()) | Where-Object { $_.FullName -like '*\explorer.exe' } | Select-Object -First 1
-if (-not $w) {
-  if ($file) { Start-Process explorer.exe -ArgumentList ('/select,"' + (Join-Path $dir $file) + '"') }
-  else { Start-Process explorer.exe -ArgumentList ('"' + $dir + '"') }
-  exit
-}
-$w.Navigate2($dir)
-for ($i = 0; $i -lt 50; $i++) {
-  Start-Sleep -Milliseconds 100
-  try { if ($w.ReadyState -eq 4 -and $w.Document.Folder.Self.Path -eq $dir) { break } } catch {}
-}
-if ($file) { try { $it = $w.Document.Folder.ParseName($file); if ($it) { $w.Document.SelectItem($it, 29) } } catch {} }
-Add-Type -Name W -Namespace P -MemberDefinition @'
-[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
-[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
-[DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e);
-'@
-$h = [IntPtr]$w.HWND
-if ([P.W]::IsIconic($h)) { [P.W]::ShowWindow($h, 9) | Out-Null }
-[P.W]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [P.W]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero) # an Alt tap lets us bring it to front
-[P.W]::SetForegroundWindow($h) | Out-Null
-`
-
-const folderPickerPS = `
-Add-Type -TypeDefinition @'
-using System; using System.Runtime.InteropServices;
-public static class Picker {
-  [ComImport, Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")] class FileOpenDialog {}
-  [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  interface IShellItem { void BindToHandler(); void GetParent(); [PreserveSig] int GetDisplayName(uint sigdn, out IntPtr name); }
-  [ComImport, Guid("42f85136-db7e-439c-85f1-e4075d135fc8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-  interface IFileOpenDialog {
-    [PreserveSig] int Show(IntPtr owner);
-    void SetFileTypes(); void SetFileTypeIndex(); void GetFileTypeIndex(); void Advise(); void Unadvise();
-    void SetOptions(uint fos); void GetOptions(); void SetDefaultFolder(); void SetFolder(); void GetFolder();
-    void GetCurrentSelection(); void SetFileName(); void GetFileName();
-    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title); void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
-    void SetFileNameLabel(); void GetResult(out IShellItem item);
-  }
-  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-  public static string Pick(string title, string ok) {
-    var d = (IFileOpenDialog)new FileOpenDialog();
-    d.SetOptions(0x20 | 0x40); // FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM
-    d.SetTitle(title); d.SetOkButtonLabel(ok);
-    if (d.Show(GetForegroundWindow()) != 0) return "";
-    IShellItem item; d.GetResult(out item);
-    IntPtr p; item.GetDisplayName(0x80058000, out p); // SIGDN_FILESYSPATH
-    var s = Marshal.PtrToStringUni(p); Marshal.FreeCoTaskMem(p); return s;
-  }
-}
-'@
-[Console]::OutputEncoding = [Text.Encoding]::UTF8
-[Picker]::Pick($env:PATHAU_TITLE, $env:PATHAU_OK)
-`

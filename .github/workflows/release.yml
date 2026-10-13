@@ -1,0 +1,48 @@
+# Builds pathau.exe in public on GitHub's servers from the tagged source, and publishes it with
+# SHA-256 checksums. Anyone can see exactly what produced each download.
+# Release: git tag v1.0.0 && git push origin v1.0.0
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: go vet ./... && go test ./...
+        shell: bash
+
+      - name: Version info, icon and manifest (no admin rights)
+        shell: bash
+        run: |
+          V=${GITHUB_REF_NAME#v}
+          go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64,arm64 --manifest gui \
+            --icon web/icon-512.png --product-name Pathau --file-description "Pathau - Wi-Fi file transfer" \
+            --product-version "$V" --file-version "$V" --original-filename pathau.exe \
+            --copyright "Pathau contributors, MIT License"
+
+      - name: Build
+        shell: bash
+        run: |
+          V=${GITHUB_REF_NAME#v}
+          mkdir dist
+          for arch in amd64 arm64; do
+            GOOS=windows GOARCH=$arch CGO_ENABLED=0 go build -trimpath \
+              -ldflags "-s -w -H windowsgui -X main.version=$V" -o "dist/pathau-$V-windows-$arch.exe" .
+          done
+          cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Pathau $GITHUB_REF_NAME" --generate-notes

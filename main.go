@@ -4,7 +4,6 @@ package main
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -30,6 +29,8 @@ import (
 //go:embed web
 var webFS embed.FS
 
+var version = "dev" // set by the release build: -X main.version=1.2.3
+
 const (
 	discPort = 8766
 	maxFails = 10
@@ -44,16 +45,10 @@ type Config struct {
 	AutoCopy bool     `json:"autoCopy"`
 }
 
-type Session struct {
-	ID   string    `json:"id"`
-	IP   string    `json:"ip"`
-	UA   string    `json:"ua"`
-	Seen time.Time `json:"seen"`
-}
-
 type TextMsg struct {
 	From string    `json:"from"`
 	Text string    `json:"text"`
+	Code string    `json:"code,omitempty"` // OTP found in Text, copied instead of the whole message
 	Time time.Time `json:"time"`
 }
 
@@ -68,19 +63,20 @@ type sub struct {
 }
 
 type App struct {
-	mu       sync.Mutex
-	cfg      Config
-	cfgPath  string
-	outDir   string // files this PC sends to phones
-	port     int
-	pass     string              // active passcode
-	id       string              // this instance, for discovery
-	sessions map[string]*Session // cookie token -> session
-	fails    map[string]*fail    // ip -> wrong passcode count
-	texts    []TextMsg
-	subs     map[*sub]bool
-	peers    map[string]*Peer
-	offers   map[string]*Offer
+	mu      sync.Mutex
+	cfg     Config
+	cfgPath string
+	outDir  string // files this PC sends to phones
+	port    int
+	pass    string // active passcode
+	id      string // this instance, for discovery
+	devPath string
+	devices map[string]*Device // sha256(token) -> paired device
+	fails   map[string]*fail   // ip -> wrong passcode count
+	texts   []TextMsg
+	subs    map[*sub]bool
+	peers   map[string]*Peer
+	offers  map[string]*Offer
 }
 
 func main() {
@@ -97,15 +93,18 @@ func main() {
 	a := newApp(port)
 	go a.discover()
 	log.Printf("Pathau running at %s", local)
-	if os.Getenv("PATHAU_NO_BROWSER") == "" {
+	background := len(os.Args) > 1 && os.Args[1] == "--background" // started with Windows
+	if !background && os.Getenv("PATHAU_NO_BROWSER") == "" {
 		open(local)
 	}
 	srv := &http.Server{Handler: a.routes(), ReadHeaderTimeout: 10 * time.Second}
-	log.Fatal(srv.Serve(ln))
+	go func() { log.Fatal(srv.Serve(ln)) }()
+	runTray(a, local) // blocks; returns only where there's no tray
+	select {}
 }
 
 func newApp(port int) *App {
-	a := &App{port: port, id: randHex(8), sessions: map[string]*Session{}, fails: map[string]*fail{},
+	a := &App{port: port, id: randHex(8), fails: map[string]*fail{},
 		subs: map[*sub]bool{}, peers: map[string]*Peer{}, offers: map[string]*Offer{}}
 	dir := os.Getenv("PATHAU_HOME")
 	if dir == "" {
@@ -114,11 +113,18 @@ func newApp(port int) *App {
 	}
 	a.cfgPath = filepath.Join(dir, "config.json")
 	a.outDir = filepath.Join(dir, "Outbox")
+	a.devPath = filepath.Join(dir, "devices.json")
+	a.loadDevices()
 	host, _ := os.Hostname()
 	home, _ := os.UserHomeDir()
 	a.cfg = Config{Name: host, SaveDir: filepath.Join(home, "Downloads", "Pathau"), AutoCopy: true}
 	if b, err := os.ReadFile(a.cfgPath); err == nil {
 		json.Unmarshal(b, &a.cfg)
+	} else if os.Getenv("PATHAU_HOME") == "" { // first run: start with Windows, so phones can always reach this PC
+		setAutostart(true)
+	}
+	if autostart() {
+		setAutostart(true) // keep the startup entry pointing at this exe, even if it was moved
 	}
 	if a.cfg.Shares == nil { // JSON null would break the UI
 		a.cfg.Shares = []string{}
@@ -146,13 +152,13 @@ func (a *App) routes() http.Handler {
 	mux.Handle("GET /", http.FileServerFS(web))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		if k := r.URL.Query().Get("k"); k != "" && !isLocal(r) { // QR code login
-			a.login(w, r, k)
+			a.pair(w, r, k)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 		http.ServeFileFS(w, r, web, "index.html")
 	})
-	mux.HandleFunc("POST /api/login", a.loginAPI)
+	mux.HandleFunc("POST /api/login", a.pairAPI)
 	mux.HandleFunc("GET /api/me", a.me)
 
 	user, admin := a.guard(false), a.guard(true)
@@ -173,7 +179,18 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("PUT /api/outbox", admin(a.outboxAdd))
 	mux.HandleFunc("POST /api/outbox/remove", admin(a.outboxRemove))
 	mux.HandleFunc("POST /api/shares/remove", admin(a.removeShare))
-	mux.HandleFunc("POST /api/kick", admin(a.kick))
+	mux.HandleFunc("POST /api/devices/answer", admin(a.answerPair))
+	mux.HandleFunc("POST /api/devices/rename", admin(a.renameDevice))
+	mux.HandleFunc("POST /api/devices/remove", admin(a.removeDevice))
+	mux.HandleFunc("POST /api/devices/shortcut", admin(a.newShortcutKey))
+	mux.HandleFunc("POST /api/autostart", admin(func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ On bool }
+		if readJSON(w, r, &req) == nil {
+			if err := setAutostart(req.On); err != nil {
+				http.Error(w, err.Error(), 500)
+			}
+		}
+	}))
 	mux.HandleFunc("POST /api/open-file", admin(a.openFile))
 	mux.HandleFunc("POST /api/quit", admin(func(w http.ResponseWriter, r *http.Request) {
 		go func() { time.Sleep(200 * time.Millisecond); os.Exit(0) }()
@@ -212,16 +229,18 @@ func clientIP(r *http.Request) string {
 	return h
 }
 
-// guard: admin = this PC only; user = this PC or a device that entered the passcode.
-// Writes need the X-Pathau header, which other websites cannot send without a CORS preflight we never allow.
+// guard: admin = this PC only; user = this PC or a paired device.
+// Cookie writes need the X-Pathau header, which other websites cannot send without a CORS preflight
+// we never allow. Bearer keys (iPhone Shortcuts) are never sent automatically, so they don't need it.
 func (a *App) guard(adminOnly bool) func(http.HandlerFunc) http.HandlerFunc {
 	return func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodGet && r.Header.Get("X-Pathau") == "" {
+			bearer := strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if r.Method != http.MethodGet && r.Header.Get("X-Pathau") == "" && !bearer {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
-			if !isLocal(r) && (adminOnly || a.session(r) == nil) {
+			if !isLocal(r) && (adminOnly || a.device(r) == nil) {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -230,75 +249,14 @@ func (a *App) guard(adminOnly bool) func(http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (a *App) session(r *http.Request) *Session {
-	c, err := r.Cookie("pathau")
-	if err != nil {
-		return nil
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	s := a.sessions[c.Value]
-	if s != nil {
-		s.Seen, s.IP = time.Now(), clientIP(r)
-	}
-	return s
-}
-
-func (a *App) login(w http.ResponseWriter, r *http.Request, code string) (int, string) {
-	ip := clientIP(r)
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	f := a.fails[ip]
-	if f != nil && time.Now().Before(f.until) {
-		return http.StatusTooManyRequests, "Too many wrong passcodes. Try again in a few minutes."
-	}
-	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(code)), []byte(a.pass)) != 1 {
-		if f == nil {
-			f = &fail{}
-			a.fails[ip] = f
-		}
-		if f.n++; f.n >= maxFails {
-			f.n, f.until = 0, time.Now().Add(pauseFor)
-		}
-		return http.StatusUnauthorized, "Wrong passcode"
-	}
-	delete(a.fails, ip)
-	tok := randHex(16)
-	a.sessions[tok] = &Session{ID: randHex(4), IP: ip, UA: r.UserAgent(), Seen: time.Now()}
-	http.SetCookie(w, &http.Cookie{Name: "pathau", Value: tok, Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, MaxAge: 30 * 86400})
-	return http.StatusOK, "ok"
-}
-
-func (a *App) loginAPI(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Code string }
-	if readJSON(w, r, &req) != nil {
-		return
-	}
-	code, msg := a.login(w, r, req.Code)
-	http.Error(w, msg, code)
-}
-
 func (a *App) me(w http.ResponseWriter, r *http.Request) {
 	admin := isLocal(r)
 	a.mu.Lock()
 	name := a.cfg.Name
 	a.mu.Unlock()
-	writeJSON(w, map[string]any{"admin": admin, "authed": admin || a.session(r) != nil, "name": name})
-}
-
-func (a *App) kick(w http.ResponseWriter, r *http.Request) {
-	var req struct{ ID string }
-	if readJSON(w, r, &req) != nil {
-		return
-	}
-	a.mu.Lock()
-	for tok, s := range a.sessions {
-		if s.ID == req.ID {
-			delete(a.sessions, tok)
-		}
-	}
-	a.mu.Unlock()
+	d := a.anyDevice(r)
+	writeJSON(w, map[string]any{"admin": admin, "authed": admin || (d != nil && !d.Pending),
+		"pending": d != nil && d.Pending, "name": name})
 }
 
 // ---- live events (Server-Sent Events) ----
@@ -342,7 +300,7 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case m := <-s.ch:
-			if !s.admin && a.session(r) == nil { // kicked
+			if !s.admin && a.device(r) == nil { // removed on this PC
 				return
 			}
 			w.Write(m)
@@ -356,7 +314,7 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 // ---- text ----
 
 func (a *App) addText(from, text string, incoming bool) {
-	m := TextMsg{From: from, Text: text, Time: time.Now()}
+	m := TextMsg{From: from, Text: text, Code: extractCode(text), Time: time.Now()}
 	a.mu.Lock()
 	a.texts = append(a.texts, m)
 	if len(a.texts) > 200 {
@@ -366,6 +324,9 @@ func (a *App) addText(from, text string, incoming bool) {
 	a.mu.Unlock()
 	a.publish(false, "text", m)
 	if incoming && auto {
+		if m.Code != "" {
+			text = m.Code
+		}
 		clipboard.WriteAll(text)
 	}
 }
@@ -381,11 +342,8 @@ func (a *App) postText(w http.ResponseWriter, r *http.Request) {
 	if readJSON(w, r, &req) != nil || strings.TrimSpace(req.Text) == "" {
 		return
 	}
-	if isLocal(r) {
-		a.addText("This PC", req.Text, false)
-	} else { // only passcode-holding devices reach here, so auto-copy is safe
-		a.addText(deviceLabel(r.UserAgent()), req.Text, true)
-	}
+	// only this PC and paired devices reach here, so auto-copy is safe
+	a.addText(a.who(r), req.Text, !isLocal(r))
 }
 
 func (a *App) readClipboard(w http.ResponseWriter, r *http.Request) {
@@ -406,10 +364,6 @@ func (a *App) state(w http.ResponseWriter, r *http.Request) {
 		}
 		peers = append(peers, p)
 	}
-	sessions := []*Session{}
-	for _, s := range a.sessions {
-		sessions = append(sessions, s)
-	}
 	offers := []map[string]any{}
 	for _, o := range a.offers {
 		if o.token == "" {
@@ -418,7 +372,8 @@ func (a *App) state(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{"name": a.cfg.Name, "passcode": a.pass, "fixedPass": a.cfg.Passcode != "",
 		"port": a.port, "ips": lanIPs(), "saveDir": a.cfg.SaveDir, "shares": a.cfg.Shares,
-		"autoCopy": a.cfg.AutoCopy, "peers": peers, "sessions": sessions, "offers": offers})
+		"autoCopy": a.cfg.AutoCopy, "peers": peers, "devices": a.deviceList(), "offers": offers,
+		"autostart": autostart(), "canAutostart": runtime.GOOS == "windows", "version": version})
 }
 
 func (a *App) qr(w http.ResponseWriter, r *http.Request) {
