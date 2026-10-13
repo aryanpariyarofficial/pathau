@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log"
 	"math/big"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -78,7 +79,11 @@ type App struct {
 	peers   map[string]*Peer
 	offers  map[string]*Offer
 	xfers   map[string]*xfer // running transfers that can be paused/canceled
+	noted   map[string]time.Time
+	quiet   bool // no notifications (tests)
 }
+
+func init() { mime.AddExtensionType(".webmanifest", "application/manifest+json") }
 
 func main() {
 	port := 8765
@@ -106,7 +111,7 @@ func main() {
 
 func newApp(port int) *App {
 	a := &App{port: port, id: randHex(8), fails: map[string]*fail{},
-		subs: map[*sub]bool{}, peers: map[string]*Peer{}, offers: map[string]*Offer{}, xfers: map[string]*xfer{}}
+		subs: map[*sub]bool{}, peers: map[string]*Peer{}, offers: map[string]*Offer{}, xfers: map[string]*xfer{}, noted: map[string]time.Time{}}
 	dir := os.Getenv("PATHAU_HOME")
 	if dir == "" {
 		d, _ := os.UserConfigDir()
@@ -313,6 +318,29 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// alert tells the person at this PC about something that happened while they may not be looking.
+// Important events (a phone asking to pair, a PC offering files) always notify, and open Pathau
+// if no Pathau window is open; the rest notify only when no window is open. Repeats are throttled.
+func (a *App) alert(kind, title, text string, important bool) {
+	a.mu.Lock()
+	watching := false
+	for s := range a.subs {
+		watching = watching || s.admin
+	}
+	skip := a.quiet || time.Since(a.noted[kind]) < 4*time.Second || (watching && !important)
+	if !skip {
+		a.noted[kind] = time.Now()
+	}
+	a.mu.Unlock()
+	if skip {
+		return
+	}
+	notify(title, text)
+	if important && !watching {
+		open(fmt.Sprintf("http://localhost:%d", a.port))
+	}
+}
+
 // ---- text ----
 
 func (a *App) addText(from, text string, incoming bool) {
@@ -330,6 +358,19 @@ func (a *App) addText(from, text string, incoming bool) {
 			text = m.Code
 		}
 		clipboard.WriteAll(text)
+	}
+	if incoming {
+		note := text
+		if m.Code != "" {
+			note = "Code " + m.Code
+		}
+		if len(note) > 80 {
+			note = note[:80] + "…"
+		}
+		if auto {
+			note += "  (copied, press Ctrl+V)"
+		}
+		a.alert("text", "Text from "+from, note, false)
 	}
 }
 

@@ -625,6 +625,27 @@ $('#login-form').onsubmit = async (e) => {
   try { await api('/api/login', { code: $('#code').value }); location.reload(); } catch (err) { toast(err.message); }
 };
 
+// ---------- add to home screen (phones) ----------
+// A real "Install app" needs HTTPS, which home-network addresses can't get, so we guide the
+// browser's own "Add to Home Screen". On iPhone that opens full screen like an app.
+let installEvt;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; $('#install-btn').hidden = false; });
+function setupInstall() {
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let st = {};
+  try { st = JSON.parse(localStorage.getItem('pathau-install') || '{}'); } catch { /* private mode */ }
+  if (me.admin || standalone || st.done || Date.now() - (st.later || 0) < 7 * 864e5) return;
+  const ios = /iPhone|iPad/.test(navigator.userAgent);
+  $('#install-how').textContent = ios
+    ? 'Tap Share at the bottom of Safari, then "Add to Home Screen". Pathau then opens full screen, like an app.'
+    : 'Tap ⋮ at the top right of Chrome, then "Add to Home screen". Next time just tap the Pathau icon.';
+  $('#install').hidden = false;
+  const save = (v) => { try { localStorage.setItem('pathau-install', JSON.stringify(v)); } catch { /* ignore */ } $('#install').hidden = true; };
+  $('#install-done').onclick = () => save({ done: true });
+  $('#install-later').onclick = () => save({ later: Date.now() });
+  $('#install-btn').onclick = async () => { installEvt?.prompt(); if ((await installEvt?.userChoice)?.outcome === 'accepted') save({ done: true }); };
+}
+
 // ---------- start ----------
 (async () => {
   me = await api('/api/me');
@@ -644,6 +665,7 @@ $('#login-form').onsubmit = async (e) => {
   $('#sort').value = prefs.sort || 'date-desc';
   setView(prefs.view || (me.admin ? 'grid' : 'list'));
   go();
+  setupInstall();
 
   (await api('/api/texts')).forEach((m) => addText(m, false));
   const es = new EventSource('/api/events');
@@ -656,9 +678,10 @@ $('#login-form').onsubmit = async (e) => {
     loadFromPC();
     if (JSON.parse(e.data).name) { toast(`${me.name} sent you a file`); if (!onPage('files')) bump('#files-badge'); }
   });
-  es.onopen = () => { $('.dot').classList.remove('off'); $('#me-status').textContent = 'Online'; };
+  es.onopen = () => { $('.dot').classList.remove('off'); $('#me-status').textContent = 'Online'; $('#offline').hidden = true; };
   es.onerror = () => {
     $('.dot').classList.add('off'); $('#me-status').textContent = 'Reconnecting…';
+    if (!me.admin) $('#offline').hidden = false;
     if (es.readyState === EventSource.CLOSED) location.reload(); // e.g. this phone was disconnected
   };
 

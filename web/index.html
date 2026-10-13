@@ -7,6 +7,11 @@
 <link rel="icon" href="favicon.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#2563eb">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pathau">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -83,6 +88,10 @@
   </nav>
 
   <main id="content" tabindex="-1">
+    <div id="offline" class="offline" role="status" hidden>
+      <svg class="ic"><use href="#i-alert"/></svg>
+      <span>Can't reach <b class="pc-name">your PC</b>. Check that Pathau is running there and that you're on the same Wi-Fi. Reconnecting…</span>
+    </div>
     <div id="offers"></div>
 
     <!-- HOME -->
@@ -91,6 +100,19 @@
         <h1 id="home-h"><span class="admin-only">Home</span><span class="phone-only">Send to <span class="pc-name"></span></span></h1>
         <p class="sub admin-only">Share files and text with phones and computers on your Wi-Fi.</p>
       </header>
+
+      <article class="card install phone-only" id="install" hidden aria-labelledby="install-h">
+        <img src="icon-192.png" alt="" width="56" height="56">
+        <div class="grow">
+          <b id="install-h">Add Pathau to your home screen</b>
+          <p class="sub" id="install-how"></p>
+        </div>
+        <button type="button" class="icon-btn" id="install-later" aria-label="Not now"><svg class="ic"><use href="#i-x"/></svg></button>
+        <div class="row">
+          <button type="button" class="btn primary sm" id="install-btn" hidden>Install</button>
+          <button type="button" class="btn sm" id="install-done"><svg class="ic sm"><use href="#i-check"/></svg>I've added it</button>
+        </div>
+      </article>
 
       <div class="grid-2 admin-only">
         <article class="card">

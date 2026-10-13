@@ -47,6 +47,7 @@ No cable, no cloud, no account, no internet data. Free and open source.
 - Send photos, videos and documents to the PC in **full original quality**.
 - **PC → phone:** drop files or folders on *Send to phones*, and every paired phone sees them under *Files* with a Download button.
 - **Pair once:** after you click *Allow* on the PC, the phone stays paired, even after restarts, until you remove it.
+- **On your home screen:** add Pathau to the home screen with its own icon. On iPhone it opens full screen, like an app.
 
 **PC ↔ PC**
 - Other PCs running Pathau **appear automatically**. Click *Send files* / *Send folder*, or drag and drop onto a computer.
@@ -67,7 +68,8 @@ No cable, no cloud, no account, no internet data. Free and open source.
 **Always ready, safe by default**
 - Starts with Windows and lives in the **system tray**.
 - New devices need your **Allow**, passcodes work once, and 10 wrong tries pauses a device. See [Security](#security).
-- Big files stream straight to disk with live progress and speed. Existing files are never overwritten.
+- Big files stream straight to disk with live progress and speed. **Pause, resume or cancel** any transfer from either device. Existing files are never overwritten.
+- **Windows notifications** for received files and texts. When a phone asks to pair or a PC wants to send files, Pathau opens itself.
 - One ~9 MB `.exe`. No installer, no admin rights, no internet.
 - Light and dark mode, on PC and phone.
 
@@ -103,6 +105,16 @@ No cable, no cloud, no account, no internet data. Free and open source.
 3. Files are saved in `Downloads\Pathau` on the PC. See them under **Files → Received**, preview them, or click **Show in folder**.
 
 **iPhone tip:** for full original quality, in the photo picker tap **Options** at the top and choose **Current**.
+</details>
+
+<details>
+<summary><b>Put Pathau on your phone's home screen</b></summary>
+
+After pairing, Pathau shows a card with the steps for your phone:
+- **iPhone (Safari):** Share → **Add to Home Screen**. It opens full screen, like an app.
+- **Android (Chrome):** ⋮ → **Add to Home screen**. Tap the Pathau icon instead of scanning again.
+
+Why not a one-tap "Install app"? Browsers only offer that for HTTPS sites, and certificates can't be issued for home-network addresses like `192.168.1.5`.
 </details>
 
 <details>

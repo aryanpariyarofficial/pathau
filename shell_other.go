@@ -14,3 +14,5 @@ func showInExplorer(dir, _ string) { open(dir) }
 func pickFolder(string, string) (string, error) {
 	return "", errors.New("type the folder path instead")
 }
+
+func notify(string, string) {}

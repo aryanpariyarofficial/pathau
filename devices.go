@@ -124,6 +124,7 @@ func (a *App) pair(w http.ResponseWriter, r *http.Request, code string) (int, st
 		UA: r.UserAgent(), IP: ip, Paired: time.Now(), Seen: time.Now(), Pending: true}
 	http.SetCookie(w, &http.Cookie{Name: "pathau", Value: tok, Path: "/", HttpOnly: true,
 		SameSite: http.SameSiteStrictMode, MaxAge: 10 * 365 * 86400})
+	go a.alert("pair", deviceLabel(r.UserAgent())+" wants to connect", "Open Pathau and click Allow if this is your phone.", true)
 	return http.StatusAccepted, "Waiting for approval on the PC"
 }
 

@@ -179,6 +179,7 @@ func (a *App) upload(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	a.alert("rx", "Received "+path.Base(name), "From "+a.who(r), false)
 	writeJSON(w, map[string]string{"name": name})
 }
 

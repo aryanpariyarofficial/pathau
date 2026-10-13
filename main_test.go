@@ -21,6 +21,7 @@ func testApp(t *testing.T) (*App, *httptest.Server) {
 	a := newApp(8765)
 	a.cfg.SaveDir = t.TempDir()
 	a.cfg.AutoCopy = false
+	a.quiet = true
 	srv := httptest.NewServer(a.routes())
 	t.Cleanup(srv.Close)
 	return a, srv

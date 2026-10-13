@@ -6,11 +6,13 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -169,6 +171,7 @@ func (a *App) peerOffer(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	a.offers[o.ID] = o
 	a.mu.Unlock()
+	a.alert("offer", o.From+" wants to send you files", fmt.Sprintf("%d file(s). Open Pathau to accept or decline.", len(o.Files)), true)
 
 	ok := false
 	select {
@@ -234,6 +237,7 @@ func (a *App) peerFile(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	a.alert("rx", "Received "+filepath.Base(name), "From "+o.From, false)
 	a.mu.Lock()
 	delete(o.left, p)
 	if len(o.left) == 0 {

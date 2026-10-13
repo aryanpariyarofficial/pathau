@@ -273,6 +273,15 @@ dialog#viewer::backdrop { background: rgb(2 6 23 / .7); }
 .steps-box code { background: var(--surface-2); padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere; }
 .keybox { display: flex; gap: var(--s2); align-items: center; padding: var(--s2) var(--s3); background: var(--surface-2); border-radius: var(--radius-sm); font: 13px var(--mono); overflow-wrap: anywhere; }
 
+.install { display: grid; grid-template-columns: auto 1fr auto; gap: var(--s2) var(--s4); align-items: start; border-color: var(--primary); background: var(--primary-soft); }
+.install .row { grid-column: 2 / -1; margin: 0; }
+#install-later { grid-column: 3; grid-row: 1; margin: -8px -8px 0 0; }
+.install img { border-radius: 14px; flex: none; }
+.install b { display: block; font-size: 16px; }
+.install .sub { margin-top: 2px; }
+.offline { display: flex; gap: var(--s3); align-items: center; max-width: 1080px; margin: 0 auto var(--s4); padding: var(--s3) var(--s4); border-radius: var(--radius); background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; font-size: 14px; }
+@media (prefers-color-scheme: dark) { .offline { background: #422006; color: #fde68a; border-color: #92400e; } }
+
 /* toast */
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 100; max-width: calc(100% - 32px);

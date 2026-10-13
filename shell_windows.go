@@ -236,3 +236,8 @@ func startExplorer(args string) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: "explorer.exe " + args} // explorer wants its own quoting
 	cmd.Start()
 }
+
+// notify shows a Windows notification (non-blocking).
+func notify(title, text string) {
+	go zenity.Notify(text, zenity.Title(title), zenity.InfoIcon)
+}
