@@ -161,6 +161,10 @@ body:not(.admin) .admin-only, body.admin .phone-only { display: none !important;
 .xfer.ok .bar i { background: var(--ok); }
 .xfer.bad > .ic, .xfer.bad .info { color: var(--danger); }
 .xfer.paused .bar i { background: var(--folder); }
+.fail-list { grid-column: 2 / -1; font-size: 13px; color: var(--text-2); }
+.fail-list summary { cursor: pointer; color: var(--danger); font-weight: 550; }
+.fail-list ul { margin: 6px 0 0; padding-left: 18px; max-height: 180px; overflow: auto; overflow-wrap: anywhere; }
+#keep-awake { margin: 0 0 var(--s3); color: var(--folder); }
 .xfer.paused > .ic { color: var(--folder); }
 .xfer.bad .bar i { background: var(--danger); }
 

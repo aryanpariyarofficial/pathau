@@ -131,6 +131,10 @@ function row(label, total, icon = 'upload') {
     done(msg) { acts.replaceChildren(); delete rows[r.xid]; el.classList.add('ok'); fill.style.width = '100%'; info.textContent = msg; el.firstChild.replaceWith(ic('check')); },
     fail(msg) { acts.replaceChildren(); delete rows[r.xid]; el.classList.remove('paused'); el.classList.add('bad'); info.textContent = msg; el.firstChild.replaceWith(ic('alert')); },
     action(label, icon, fn) { acts.append(iconBtn(label, icon, fn)); },
+    detail(lines) { // which files failed and why
+      el.append(h('details', { class: 'fail-list' }, h('summary', { textContent: 'Show details' }),
+        h('ul', {}, ...lines.slice(0, 100).map((t) => h('li', { textContent: t })))));
+    },
     track(xid) { delete rows[r.xid]; r.xid = xid; rows[xid] = r; },
     // mark shows a pause/resume/cancel made here or on the other device
     mark(action) {
@@ -157,7 +161,7 @@ function put(url, file, onProgress, r) {
     x.open('PUT', url); x.setRequestHeader('X-Pathau', '1');
     x.upload.onprogress = (e) => onProgress(e.loaded);
     x.onload = () => (x.status < 300 ? res(x.responseText) : rej(new Error(x.responseText.trim() || x.status)));
-    x.onerror = x.onabort = () => rej(new Error('Connection lost'));
+    x.onerror = x.onabort = () => rej(Object.assign(new Error('Connection lost'), { network: true }));
     x.send(file);
   });
 }
@@ -166,20 +170,73 @@ const total = (items) => items.reduce((s, i) => s + i.file.size, 0);
 const what = (items) => (items.length === 1 ? items[0].path : `${items.length} files`);
 
 // uploadItems sends files one by one; urlFor(item, xid) gives each file's URL.
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// waitUntilAwake resolves once the page is on screen and the device is online. Phones pause a
+// browser's network when the screen turns off or it goes to the background, mid-transfer.
+function waitUntilAwake() {
+  const ok = () => document.visibilityState === 'visible' && navigator.onLine;
+  return new Promise((res) => {
+    if (ok()) return res();
+    const check = () => {
+      if (!ok()) return;
+      document.removeEventListener('visibilitychange', check); removeEventListener('online', check); res();
+    };
+    document.addEventListener('visibilitychange', check); addEventListener('online', check);
+  });
+}
+
+// sendOne uploads one file. A dropped connection (screen off, Wi-Fi blip) or a damaged copy is
+// retried after a growing pause, from the same file, so one hiccup can't fail the rest of a batch.
+// Returns null on success, or the error that ended it.
+async function sendOne(r, urlFor, file, onProgress) {
+  for (let attempt = 0; ; attempt++) {
+    try { await put(urlFor(attempt), file, onProgress, r); return null; }
+    catch (e) {
+      if (r.canceled || /Canceled/.test(e.message)) { r.canceled = true; return e; }
+      const retry = e.network || /damaged|checksum|Could not reach|^5\d\d/i.test(e.message);
+      if (!retry || attempt >= 6) return e;
+      const wait = Math.min(2 ** attempt, 20);
+      r.status(`Connection lost. Retrying in ${wait}s. Keep this screen on.`);
+      await sleep(wait * 1000);
+      await waitUntilAwake();
+      if (r.canceled) return new Error('Canceled');
+    }
+  }
+}
+
+// finish ends a batch row: done, canceled, or which files failed and why, with Retry.
+function finish(r, items, failures, okMsg, retry) {
+  busy(-1);
+  if (r.canceled) return r.fail('Canceled');
+  if (!failures.length) return r.done(okMsg);
+  r.fail(`${failures.length} of ${items.length} failed`);
+  r.detail(failures.map((f) => `${f.it.path}: ${f.err.message}`));
+  r.action('Retry failed files', 'upload', () => retry(failures.map((f) => f.it)));
+}
+
+// busy counts running uploads: keeps a hint on screen and warns before closing the page.
+let uploading = 0;
+function busy(n) {
+  uploading += n;
+  $('#keep-awake').hidden = me.admin || uploading === 0;
+}
+addEventListener('beforeunload', (e) => { if (uploading) { e.preventDefault(); e.returnValue = ''; } });
+
 async function uploadItems(items, urlFor, label) {
   if (!items.length) return;
   const tot = total(items), r = row(label, tot);
-  r.controls();
-  let sent = 0, failed = 0;
+  r.controls(); busy(1);
+  let sent = 0;
+  const failures = [];
   for (const [i, it] of items.entries()) {
     if (r.canceled) break;
-    r.track(`${r.id}-${i}`);
-    try { await put(urlFor(it, r.xid, r.paused), it.file, (d) => r.update(sent + d, tot, items.length > 1 ? it.path : ''), r); }
-    catch (e) { if (!r.canceled) { failed++; toast(`${it.path}: ${e.message}`); } }
+    const err = await sendOne(r, (a) => { r.track(`${r.id}-${i}-${a}`); return urlFor(it, r.xid, r.paused); }, it.file,
+      (d) => r.update(sent + d, tot, items.length > 1 ? it.path : ''));
+    if (err && !r.canceled) failures.push({ it, err });
     sent += it.file.size;
   }
-  if (r.canceled) r.fail('Canceled');
-  else failed ? r.fail(`${failed} of ${items.length} failed`) : r.done(`Sent · ${fmt(sent)}`);
+  finish(r, items, failures, `Sent · ${fmt(sent)}`, (again) => uploadItems(again, urlFor, label));
 }
 // paused=1 starts the next file of a paused batch already paused
 const xq = (xid, paused) => `&xid=${xid}${paused ? '&paused=1' : ''}`;
@@ -198,25 +255,21 @@ async function sendToPeer(p, items) {
   try {
     ({ token } = await api('/api/send/offer', { peer: p.addr, files: items.map((i) => ({ path: i.path, size: i.file.size })) }));
   } catch (e) { return r.fail(e.message === 'declined' ? `${p.name} declined` : e.message); }
-  r.controls();
-  let sent = 0, failed = 0;
+  r.controls(); busy(1);
+  let sent = 0;
+  const failures = [];
   for (const [i, it] of items.entries()) {
-    let err;
-    for (let attempt = 0; attempt < 3 && !r.canceled; attempt++) { // damaged copies are deleted on the other side, so just resend
-      r.track(`${r.id}-${i}-${attempt}`);
+    if (r.canceled) break;
+    const err = await sendOne(r, (a) => { // damaged copies are deleted on the other side, so resending is safe
+      r.track(`${r.id}-${i}-${a}`);
       const q = { peer: p.addr, token, path: it.path, xid: r.xid };
       if (r.paused) q.paused = '1';
-      try {
-        await put('/api/send/file?' + new URLSearchParams(q), it.file, (d) => r.update(sent + d, tot, items.length > 1 ? it.path : ''), r);
-        err = null; break;
-      } catch (e) { err = e; if (/Canceled/.test(e.message)) r.canceled = true; }
-    }
-    if (r.canceled) break;
-    if (err) { failed++; toast(`${it.path}: ${err.message}`); }
+      return '/api/send/file?' + new URLSearchParams(q);
+    }, it.file, (d) => r.update(sent + d, tot, items.length > 1 ? it.path : ''));
+    if (err && !r.canceled) failures.push({ it, err });
     sent += it.file.size;
   }
-  if (r.canceled) r.fail('Canceled');
-  else failed ? r.fail(`${failed} of ${items.length} failed`) : r.done(`Sent · ${fmt(sent)} · verified`);
+  finish(r, items, failures, `Sent · ${fmt(sent)} · verified`, (again) => sendToPeer(p, again));
 }
 
 // Incoming progress, pushed by this PC's server

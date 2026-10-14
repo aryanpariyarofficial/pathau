@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -97,6 +98,7 @@ func (a *App) saveStream(dir, rel string, body io.Reader, total int64, from stri
 	if err != nil {
 		root.Remove(name)
 		pw.send(err.Error())
+		log.Printf("receive %q from %s failed after %d bytes: %v", rel, from, pw.done, err)
 		return "", err
 	}
 	pw.send("done")

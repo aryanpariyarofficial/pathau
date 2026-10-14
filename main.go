@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"math/big"
@@ -97,6 +98,7 @@ func main() {
 		return
 	}
 	a := newApp(port)
+	setupLog(filepath.Dir(a.cfgPath))
 	go a.discover()
 	log.Printf("Pathau running at %s", local)
 	background := len(os.Args) > 1 && os.Args[1] == "--background" // started with Windows
@@ -141,6 +143,20 @@ func newApp(port int) *App {
 		a.pass = randDigits(6)
 	}
 	return a
+}
+
+// setupLog also writes the log to pathau.log in the config folder (the tray app has no
+// console), starting fresh once it passes 2 MB.
+func setupLog(dir string) {
+	p := filepath.Join(dir, "pathau.log")
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if st, err := os.Stat(p); err == nil && st.Size() > 2<<20 {
+		flags |= os.O_TRUNC
+	}
+	os.MkdirAll(dir, 0o755)
+	if f, err := os.OpenFile(p, flags, 0o600); err == nil {
+		log.SetOutput(io.MultiWriter(os.Stderr, f))
+	}
 }
 
 // saveCfg writes the config; caller holds a.mu.
