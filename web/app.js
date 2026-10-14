@@ -447,7 +447,8 @@ function renderFiles() {
       h('tbody', {}, ...shown.map((e) => {
         const sub = p ? `${p}/${e.name}` : e.name;
         return h('tr', { onclick: () => open(e, sub) },
-          h('td', {}, h('div', { class: 'c-name' }, thumb(e, sub), h('span', { title: e.name, textContent: e.name }))),
+          h('td', {}, h('div', { class: 'c-name' }, thumb(e, sub), h('span', { title: e.name },
+            e.name, h('small', { class: 'm-meta', textContent: e.dir ? 'Folder' : `${fmt(e.size)} · ${when(e.mod)}` })))),
           h('td', { class: 'num', textContent: e.dir ? '—' : fmt(e.size) }),
           h('td', { class: 'num c-date', textContent: when(e.mod) }),
           h('td', { class: 'acts' }, ...itemActions(e, sub)));
@@ -569,6 +570,7 @@ async function refresh() {
   try { s = await api('/api/state'); } catch { return; }
   for (const el of $$('.pc-name')) el.textContent = s.name;
   me.name = s.name;
+  dashboard(s);
 
   if (changed('qr', [s.ips, s.passcode])) {
     const sel = $('#ip'), cur = sel.value;
@@ -629,6 +631,52 @@ async function refresh() {
     f.name.value = s.name; f.passcode.value = s.fixedPass ? s.passcode : ''; f.saveDir.value = s.saveDir; f.autoCopy.checked = s.autoCopy;
   }
 }
+
+// ---------- home dashboard (this PC) ----------
+const initials = (name) => (name.match(/[A-Za-z0-9]+/g) || ['?']).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+function greeting() {
+  const hr = new Date().getHours();
+  return hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+}
+function dashboard(s) {
+  $('#greet').textContent = greeting();
+  $('#today').textContent = new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  $('#net-ip').textContent = s.ips[0] ? `${s.ips[0]}:${s.port}` : 'Not on Wi-Fi';
+  $('#me-avatar').textContent = initials(s.name);
+  const online = new Set(s.online), paired = s.devices.filter((d) => !d.pending);
+  const on = paired.filter((d) => online.has(d.id)).length;
+  $('#st-recv').textContent = s.stats.recvToday;
+  $('#st-recv-sub').textContent = s.stats.recvToday ? `files · ${fmt(s.stats.recvTodayBytes)}` : 'files';
+  $('#st-out').textContent = s.stats.outbox;
+  $('#st-phones').textContent = paired.length;
+  $('#st-phones-sub').textContent = on ? `${on} online now` : 'none online';
+  $('#st-pcs').textContent = s.peers.length;
+  if (changed('homeDevices', [paired.map((d) => [d.id, d.name, d.seen]), [...online]])) {
+    $('#no-home-devices').hidden = paired.length > 0;
+    const sorted = [...paired].sort((a, b) => online.has(b.id) - online.has(a.id) || Date.parse(b.seen) - Date.parse(a.seen));
+    $('#home-devices').replaceChildren(...sorted.slice(0, 6).map((d) => {
+      const live = online.has(d.id);
+      return h('li', {}, h('span', { class: 'avatar', 'aria-hidden': 'true', textContent: initials(d.name) }),
+        h('div', { class: 'grow' }, h('b', { textContent: d.name }),
+          h('small', { textContent: live ? 'Online now' : `Last seen ${d.seen.startsWith('0001') ? 'never' : when(d.seen)}` })),
+        h('span', { class: `dot${live ? '' : ' idle'}`, title: live ? 'Online' : 'Offline' }));
+    }));
+  }
+}
+$('#hd-send').onclick = async () => sendToPhones(await pick(false));
+$('#hd-share').onclick = () => { location.hash = 'files'; addShare(); };
+$('#hd-qr').onclick = () => $('#qr-btn').click();
+$('#st-recv-card').onclick = () => openSrc('recv');
+$('#st-out-card').onclick = () => openSrc('out');
+// top bar search: jumps to Files and filters; Ctrl+K focuses it
+$('#top-q').addEventListener('input', (e) => {
+  if (location.hash !== '#files') location.hash = 'files';
+  $('#q').value = e.target.value;
+  renderFiles();
+});
+addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && me.admin) { e.preventDefault(); $('#top-q').focus(); }
+});
 
 function showQR(s) {
   const ip = $('#ip').value || s.ips[0];

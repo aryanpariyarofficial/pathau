@@ -62,6 +62,7 @@ type fail struct {
 type sub struct {
 	ch    chan []byte
 	admin bool
+	dev   string // paired device ID, so the PC can show who's online
 }
 
 type App struct {
@@ -82,6 +83,9 @@ type App struct {
 	xfers   map[string]*xfer // running transfers that can be paused/canceled
 	noted   map[string]time.Time
 	quiet   bool // no notifications (tests)
+	statN   int  // todayStats cache
+	statB   int64
+	statsAt time.Time
 }
 
 func init() { mime.AddExtensionType(".webmanifest", "application/manifest+json") }
@@ -307,6 +311,9 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s := &sub{ch: make(chan []byte, 256), admin: isLocal(r)}
+	if d := a.device(r); d != nil {
+		s.dev = d.ID
+	}
 	a.mu.Lock()
 	a.subs[s] = true
 	a.mu.Unlock()
@@ -413,8 +420,19 @@ func (a *App) readClipboard(w http.ResponseWriter, r *http.Request) {
 // ---- admin state & settings ----
 
 func (a *App) state(w http.ResponseWriter, r *http.Request) {
+	recvN, recvB := a.todayStats()
+	outN := 0
+	if ents, err := os.ReadDir(a.outDir); err == nil {
+		outN = len(ents)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	online := []string{}
+	for s := range a.subs {
+		if s.dev != "" {
+			online = append(online, s.dev)
+		}
+	}
 	peers := []*Peer{}
 	for id, p := range a.peers {
 		if !p.Manual && time.Since(p.Seen) > 10*time.Second {
@@ -432,7 +450,8 @@ func (a *App) state(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"name": a.cfg.Name, "passcode": a.pass, "fixedPass": a.cfg.Passcode != "",
 		"port": a.port, "ips": lanIPs(), "saveDir": a.cfg.SaveDir, "shares": a.cfg.Shares,
 		"autoCopy": a.cfg.AutoCopy, "peers": peers, "devices": a.deviceList(), "offers": offers,
-		"autostart": autostart(), "canAutostart": runtime.GOOS == "windows", "version": version})
+		"autostart": autostart(), "canAutostart": runtime.GOOS == "windows", "version": version,
+		"online": online, "stats": map[string]any{"recvToday": recvN, "recvTodayBytes": recvB, "outbox": outN}})
 }
 
 func (a *App) qr(w http.ResponseWriter, r *http.Request) {
@@ -483,6 +502,38 @@ func (a *App) settings(w http.ResponseWriter, r *http.Request) {
 	if err := a.saveCfg(); err != nil {
 		http.Error(w, err.Error(), 500)
 	}
+}
+
+// todayStats counts files received today (any subfolder), cached for 10 s.
+// ponytail: walks the save folder; stops after 50k entries so a huge folder stays fast.
+func (a *App) todayStats() (int, int64) {
+	a.mu.Lock()
+	dir, cached := a.cfg.SaveDir, time.Since(a.statsAt) < 10*time.Second
+	n, b := a.statN, a.statB
+	a.mu.Unlock()
+	if cached {
+		return n, b
+	}
+	n, b = 0, 0
+	y, m, d := time.Now().Date()
+	midnight := time.Date(y, m, d, 0, 0, 0, 0, time.Local)
+	seen := 0
+	filepath.WalkDir(dir, func(_ string, e fs.DirEntry, err error) error {
+		if seen++; err != nil || seen > 50000 {
+			return filepath.SkipAll
+		}
+		if e.Type().IsRegular() {
+			if info, err := e.Info(); err == nil && !info.ModTime().Before(midnight) {
+				n++
+				b += info.Size()
+			}
+		}
+		return nil
+	})
+	a.mu.Lock()
+	a.statN, a.statB, a.statsAt = n, b, time.Now()
+	a.mu.Unlock()
+	return n, b
 }
 
 // ---- helpers ----

@@ -60,6 +60,8 @@
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
   <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M12 20h.01M2 8.82a15 15 0 0 1 20 0M5 12.86a10 10 0 0 1 14 0M8.5 16.43a5 5 0 0 1 7 0"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
   <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
 </svg>
@@ -88,17 +90,29 @@
 <div id="app" class="shell" hidden>
   <nav class="nav" aria-label="Main">
     <div class="brand"><img src="icon-192.png" alt="" width="32" height="32"><span>Pathau</span></div>
+    <p class="nav-label">Transfer</p>
     <a href="#home" data-page="home"><svg class="ic"><use href="#i-home"/></svg><span class="admin-only">Home</span><span class="phone-only">Send</span></a>
     <a href="#files" data-page="files"><svg class="ic"><use href="#i-folder"/></svg><span>Files</span><b class="badge" id="files-badge" hidden></b></a>
     <a href="#text" data-page="text"><svg class="ic"><use href="#i-text"/></svg><span>Text</span><b class="badge" id="text-badge" hidden></b></a>
+    <p class="nav-label admin-only">Manage</p>
     <a href="#devices" data-page="devices" class="admin-only"><svg class="ic"><use href="#i-devices"/></svg><span>Devices</span></a>
     <a href="#settings" data-page="settings" class="admin-only"><svg class="ic"><use href="#i-settings"/></svg><span>Settings</span></a>
-    <div class="nav-foot">
-      <span class="dot" aria-hidden="true"></span>
-      <div><b class="pc-name"></b><small id="me-status">Online</small></div>
+    <div class="nav-bottom">
+      <button type="button" class="theme-btn" id="theme-btn"></button>
+      <div class="me-card">
+        <span class="avatar" id="me-avatar" aria-hidden="true"></span>
+        <div class="grow"><b class="pc-name"></b><small id="me-status">Online</small></div>
+        <span class="dot" aria-hidden="true"></span>
+      </div>
     </div>
-    <button type="button" class="theme-btn" id="theme-btn"></button>
   </nav>
+
+  <div class="main-col">
+  <header class="topbar admin-only">
+    <span class="today"><svg class="ic sm"><use href="#i-calendar"/></svg><span id="today"></span></span>
+    <label class="search top-search"><svg class="ic sm"><use href="#i-search"/></svg><input id="top-q" type="search" placeholder="Search files" aria-label="Search files"><kbd>Ctrl K</kbd></label>
+    <span class="chip" title="This PC's address on your Wi-Fi"><svg class="ic sm"><use href="#i-wifi"/></svg><span id="net-ip">…</span></span>
+  </header>
 
   <main id="content" tabindex="-1">
     <div id="offline" class="offline" role="status" hidden>
@@ -109,10 +123,36 @@
 
     <!-- HOME -->
     <section class="page" data-page="home" aria-labelledby="home-h">
-      <header class="page-head">
-        <h1 id="home-h"><span class="admin-only">Home</span><span class="phone-only">Send to <span class="pc-name"></span></span></h1>
-        <p class="sub admin-only">Share files and text with phones and computers on your Wi-Fi.</p>
+      <header class="page-head greet">
+        <div>
+          <h1 id="home-h"><span class="admin-only" id="greet">Hello</span><span class="phone-only">Send to <span class="pc-name"></span></span></h1>
+          <p class="sub admin-only">Here's what's happening on <b class="pc-name"></b></p>
+        </div>
+        <div class="row head-actions admin-only">
+          <button type="button" class="btn primary" id="hd-send"><svg class="ic"><use href="#i-plus"/></svg>Send to phones</button>
+          <button type="button" class="btn" id="hd-share"><svg class="ic"><use href="#i-folder"/></svg>Share a folder</button>
+          <button type="button" class="btn" id="hd-qr"><svg class="ic"><use href="#i-phone"/></svg>Connect a phone</button>
+        </div>
       </header>
+
+      <div class="stats admin-only">
+        <a class="stat" href="#files" id="st-recv-card">
+          <span class="itile t-blue"><svg class="ic"><use href="#i-inbox"/></svg></span>
+          <div><small>Received today</small><b id="st-recv">0</b><span id="st-recv-sub">files</span></div>
+        </a>
+        <a class="stat" href="#files" id="st-out-card">
+          <span class="itile t-green"><svg class="ic"><use href="#i-send"/></svg></span>
+          <div><small>Sent to phones</small><b id="st-out">0</b><span>ready to download</span></div>
+        </a>
+        <a class="stat" href="#devices">
+          <span class="itile t-violet"><svg class="ic"><use href="#i-phone"/></svg></span>
+          <div><small>Paired phones</small><b id="st-phones">0</b><span id="st-phones-sub">none online</span></div>
+        </a>
+        <a class="stat" href="#devices">
+          <span class="itile t-amber"><svg class="ic"><use href="#i-laptop"/></svg></span>
+          <div><small>Computers nearby</small><b id="st-pcs">0</b><span>on this Wi-Fi</span></div>
+        </a>
+      </div>
 
       <article class="card install phone-only" id="install" hidden aria-labelledby="install-h">
         <img src="icon-192.png" alt="" width="56" height="56">
@@ -129,7 +169,10 @@
 
       <div class="grid-2 admin-only">
         <article class="card">
-          <h2>Connect a phone</h2>
+          <div class="card-head">
+            <span class="itile t-blue"><svg class="ic"><use href="#i-phone"/></svg></span>
+            <div class="grow"><h2>Connect a phone</h2><small>Scan once, it stays paired</small></div>
+          </div>
           <div class="connect">
             <button type="button" class="qr-btn" id="qr-btn" aria-label="Show a bigger QR code">
               <img id="qr" width="200" height="200" alt="QR code that opens Pathau on your phone">
@@ -149,8 +192,11 @@
         </article>
 
         <article class="card">
-          <h2>Send to phones</h2>
-          <p class="sub">Add files here and every connected phone can download them.</p>
+          <div class="card-head">
+            <span class="itile t-green"><svg class="ic"><use href="#i-send"/></svg></span>
+            <div class="grow"><h2>Send to phones</h2><small>Every paired phone can download these</small></div>
+            <a href="#files" class="link" id="out-link">See all <svg class="ic sm"><use href="#i-right"/></svg></a>
+          </div>
           <div class="drop" id="out-drop">
             <svg class="ic lg"><use href="#i-upload"/></svg>
             <b>Drop files or folders here</b>
@@ -159,7 +205,6 @@
               <button type="button" class="btn" id="out-folder">Choose folder</button>
             </div>
           </div>
-          <a href="#files" class="link" id="out-link">See files sent to phones <svg class="ic sm"><use href="#i-right"/></svg></a>
         </article>
       </div>
 
@@ -175,21 +220,40 @@
       </article>
 
       <article class="card phone-only" id="from-pc" hidden>
-        <div class="card-head"><h2>From your PC</h2><a href="#files" class="link" id="from-pc-all">See all</a></div>
+        <div class="card-head"><div class="grow"><h2>From your PC</h2></div><a href="#files" class="link" id="from-pc-all">See all</a></div>
         <ul class="rows" id="from-pc-list"></ul>
       </article>
 
+      <div class="grid-wide">
+        <article class="card">
+          <div class="card-head">
+            <span class="itile t-teal"><svg class="ic"><use href="#i-download"/></svg></span>
+            <div class="grow"><h2>Activity</h2><small>Transfers on this device</small></div>
+          </div>
+          <p class="hint phone-only" id="keep-awake" hidden><svg class="ic sm"><use href="#i-alert"/></svg>Keep this screen on until sending finishes. If it turns off, Pathau picks up where it stopped.</p>
+          <ul class="xfers" id="xfers"></ul>
+          <p class="empty" id="no-xfers">Nothing sent or received yet.</p>
+        </article>
+
+        <article class="card admin-only">
+          <div class="card-head">
+            <span class="itile t-violet"><svg class="ic"><use href="#i-phone"/></svg></span>
+            <div class="grow"><h2>Paired phones</h2><small>Online now first</small></div>
+            <a href="#devices" class="link">Manage</a>
+          </div>
+          <ul class="people" id="home-devices"></ul>
+          <p class="empty" id="no-home-devices">No phones yet. Scan the QR code to pair one.</p>
+        </article>
+      </div>
+
       <article class="card admin-only">
-        <div class="card-head"><h2>Computers nearby</h2><a href="#devices" class="link">Connect by IP</a></div>
+        <div class="card-head">
+          <span class="itile t-amber"><svg class="ic"><use href="#i-laptop"/></svg></span>
+          <div class="grow"><h2>Computers nearby</h2><small>Drop files on a computer to send</small></div>
+          <a href="#devices" class="link">Connect by IP</a>
+        </div>
         <ul class="peers" id="peers"></ul>
         <p class="empty" id="no-peers">Looking for other PCs running Pathau on this Wi-Fi…</p>
-      </article>
-
-      <article class="card">
-        <h2>Activity</h2>
-        <p class="hint phone-only" id="keep-awake" hidden><svg class="ic sm"><use href="#i-alert"/></svg>Keep this screen on until sending finishes. If it turns off, Pathau picks up where it stopped.</p>
-        <ul class="xfers" id="xfers"></ul>
-        <p class="empty" id="no-xfers">Nothing sent or received yet.</p>
       </article>
     </section>
 
@@ -239,7 +303,10 @@
         </div>
       </form>
       <article class="card">
-        <h2>History</h2>
+        <div class="card-head">
+          <span class="itile t-blue"><svg class="ic"><use href="#i-text"/></svg></span>
+          <div class="grow"><h2>History</h2><small>Newest first. Codes from OTP messages are pulled out for you.</small></div>
+        </div>
         <ul class="texts" id="texts"></ul>
         <p class="empty" id="no-texts">No messages yet.</p>
       </article>
@@ -249,19 +316,25 @@
     <section class="page" data-page="devices" aria-labelledby="devices-h" hidden>
       <header class="page-head"><h1 id="devices-h">Devices</h1></header>
       <article class="card">
-        <h2>Paired phones</h2>
-        <p class="sub">Paired once, they stay connected, even after this PC restarts. Remove any you don't recognize.</p>
+<div class="card-head">
+          <span class="itile t-violet"><svg class="ic"><use href="#i-phone"/></svg></span>
+          <div class="grow"><h2>Paired phones</h2><small>Paired once, they stay connected, even after this PC restarts. Remove any you don't recognize.</small></div>
+        </div>
         <ul class="rows" id="devices"></ul>
         <p class="empty" id="no-devices">No phones paired yet. Scan the QR code on Home to pair one.</p>
       </article>
       <article class="card">
-        <h2>iPhone: send OTPs automatically</h2>
-        <p class="sub">An iPhone Shortcut can forward OTP messages to this PC's clipboard, so you just press Ctrl+V. No app needed.</p>
+<div class="card-head">
+          <span class="itile t-teal"><svg class="ic"><use href="#i-text"/></svg></span>
+          <div class="grow"><h2>iPhone: send OTPs automatically</h2><small>An iPhone Shortcut forwards OTP messages to this PC's clipboard, so you just press Ctrl+V.</small></div>
+        </div>
         <div id="shortcut-setup"><button type="button" class="btn" id="make-key"><svg class="ic"><use href="#i-plus"/></svg>Set up iPhone Shortcut</button></div>
       </article>
       <article class="card">
-        <h2>Computers</h2>
-        <p class="sub">Other PCs running Pathau on this Wi-Fi appear here automatically.</p>
+<div class="card-head">
+          <span class="itile t-amber"><svg class="ic"><use href="#i-laptop"/></svg></span>
+          <div class="grow"><h2>Computers</h2><small>Other PCs running Pathau on this Wi-Fi appear here automatically.</small></div>
+        </div>
         <ul class="peers" id="peers-2"></ul>
         <form class="row" id="connect-form">
           <input id="connect-ip" class="grow" placeholder="IP address, e.g. 192.168.1.20" aria-label="Computer IP address" inputmode="decimal">
@@ -311,13 +384,16 @@
         <div class="row"><button class="btn primary">Save changes</button></div>
       </form>
       <article class="card">
-        <h2>Quit Pathau</h2>
-        <p class="sub">Stops Pathau on this PC. Phones and computers will disconnect.</p>
+<div class="card-head">
+          <span class="itile t-amber"><svg class="ic"><use href="#i-power"/></svg></span>
+          <div class="grow"><h2>Quit Pathau</h2><small>Stops Pathau on this PC. Phones and computers will disconnect.</small></div>
+        </div>
         <button type="button" class="btn danger" id="quit"><svg class="ic"><use href="#i-power"/></svg>Quit Pathau</button>
       </article>
       <p class="foot">Pathau <span id="version"></span> · free and open source · <a href="https://github.com/aryanpariyarofficial/pathau" target="_blank" rel="noopener">GitHub</a><br>Your files never leave your network.</p>
     </section>
   </main>
+  </div>
 </div>
 
 <dialog id="viewer" aria-labelledby="viewer-name">
