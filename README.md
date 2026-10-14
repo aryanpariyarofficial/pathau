@@ -68,7 +68,7 @@ No cable, no cloud, no account, no internet data. Free and open source.
 **Always ready, safe by default**
 - Starts with Windows and lives in the **system tray**.
 - New devices need your **Allow**, passcodes work once, and 10 wrong tries pauses a device. See [Security](#security).
-- Big files stream straight to disk with live progress and speed. **Pause, resume or cancel** any transfer from either device. Existing files are never overwritten.
+- Big files stream straight to disk with live progress and speed. **Pause, resume or cancel** any transfer from either device. If the connection drops (a phone screen turning off), Pathau **picks up where it stopped**. Existing files are never overwritten.
 - **Windows notifications** for received files and texts. When a phone asks to pair or a PC wants to send files, Pathau opens itself.
 - One ~12 MB `.exe`. No installer, no admin rights, no internet.
 - Light and dark mode on PC and phone: follow the system, or pick one (sidebar button or Settings → Appearance).
@@ -79,7 +79,7 @@ No cable, no cloud, no account, no internet data. Free and open source.
 | ![Files in grid view with photo thumbnails](docs/screenshots/desktop-files-grid.png) | ![Files in list view with size and date columns](docs/screenshots/desktop-files-list.png) |
 | **Files**: grid view with thumbnails | **Files**: list view, sortable by name, size and date |
 | ![Full-screen photo preview with Open and Show in folder](docs/screenshots/desktop-preview.png) | ![Dark mode](docs/screenshots/desktop-dark.png) |
-| **Preview** with ← → navigation | **Dark mode** follows your system |
+| **Preview** with ← → navigation | **Dark mode**: follow Windows, or pick light or dark |
 | ![Devices page: approve a new phone, paired phones, iPhone shortcut, computers](docs/screenshots/desktop-devices.png) | ![Text history with the OTP code pulled out](docs/screenshots/desktop-text.png) |
 | **Devices**: approve new phones, rename or remove paired ones | **Text**: history, with OTP codes pulled out |
 
